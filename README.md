@@ -1,15 +1,17 @@
-AppCoder is an app that builds apps directly on your phone. 
+AppCoder is a mobile app that lets you build fully functional apps directly on your phone — no programming experience required.
 
-It uses large language model like Chat6PT to write the code. 
+Powered by advanced large language models like Chat6PT, AppCoder turns plain English descriptions into real, working code. Just describe what you envision, some back and forth with the AppCoder to iron out any bugs and your app is ready.
 
-It allows everyone to build their own apps just by using Englisch descriptions of the invisioned app and absolutly no programming or computer science background is needed.
-
-Even though it is targeted to non programers even Programmers can quickly generate a prototype app and test their ideas. 
-
-If you like the app and want to develop it further it is also possible to copy the code to your developer pc to further enhance and improve it.
+Designed for non-programmers, AppCoder removes all barriers to app creation. 
 
 
-Alternative Terms: App Maker , Vibe Coding , Cursor / Windsurf For Android
+But it's also a great tool for experienced developers who want to rapidly prototype an idea and test concepts.
+
+When you're ready to take your app further, you can export the code and continue development on your desktop environment using more advanced programming tools.
+
+
+Alternative terms: App Maker, Vibe Coding, Cursor / Windsurf for Android.
+
 
 ## License
 

@@ -24,7 +24,11 @@ plugins {
   kotlin("kapt")
 }
 
-
+java {
+  toolchain {
+    languageVersion.set(JavaLanguageVersion.of(17)) // Force Java tasks to target JVM 17
+  }
+}
 
 dependencies {
   kapt(libs.google.auto.service)

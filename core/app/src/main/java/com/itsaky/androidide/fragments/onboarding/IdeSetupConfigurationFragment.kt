@@ -33,8 +33,10 @@ import android.text.Html
 import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.style.URLSpan
+import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
+import android.widget.TextView
 import androidx.core.content.getSystemService
 import androidx.core.view.isVisible
 import com.github.appintro.SlidePolicy
@@ -49,6 +51,8 @@ import com.itsaky.androidide.utils.flashError
 import com.itsaky.androidide.utils.getConnectionInfo
 
 /**
+ * Fragment that allows the user to configure IDE setup options.
+ *
  * @author Akash Yadav
  */
 class IdeSetupConfigurationFragment : OnboardingFragment(), SlidePolicy {
@@ -70,7 +74,7 @@ class IdeSetupConfigurationFragment : OnboardingFragment(), SlidePolicy {
           putCharSequence(KEY_ONBOARDING_SUBTITLE,
             context.getString(R.string.subtitle_install_tools))
           putCharSequence(KEY_ONBOARDING_EXTRA_INFO,
-            Html.fromHtml(context.getString(R.string.msg_install_tools),
+            Html.fromHtml(context.getString(R.string.msg_simplified_setup),
               Html.FROM_HTML_MODE_COMPACT))
         }
       }
@@ -82,56 +86,56 @@ class IdeSetupConfigurationFragment : OnboardingFragment(), SlidePolicy {
     _content = LayoutOnboardngSetupConfigBinding.inflate(layoutInflater, parent, attachToParent)
 
     content.apply {
+      // Keep connectivity status warnings
       noConnection.root.setText(R.string.msg_no_internet)
       cellularConnection.root.setText(R.string.msg_connected_to_cellular)
       meteredConnection.root.setText(R.string.msg_connected_to_metered_connection)
       backgroundDataRestricted.root.setText(R.string.msg_disable_background_data_restriction)
 
-      autoInstallSwitch.setOnCheckedChangeListener { button, isChecked ->
-        button.setText(
-          if (isChecked) R.string.action_auto_install else R.string.action_manual_install)
-        sdkVersionLayout.isEnabled = isChecked
-        jdkVersionLayout.isEnabled = isChecked
-        installGit.isEnabled = isChecked
-        installOpenssh.isEnabled = isChecked
-      }
-
+      // Hide configuration options
+      sdkVersionLayout.visibility = View.GONE
+      jdkVersionLayout.visibility = View.GONE
+      installGit.visibility = View.GONE
+      installOpenssh.visibility = View.GONE
+      
+      // Auto-install is always enabled and locked
+      autoInstallSwitch.isChecked = true
+      autoInstallSwitch.isEnabled = false
+      autoInstallSwitch.setText(R.string.action_auto_install)
+      
+      // Preselect options in the background (not visible but used by buildIdeSetupArguments)
       val sdkVersions = SdkVersion.entries.map { "SDK ${it.version}" }.reversed()
       sdkVersion.setText(sdkVersions[0])
-      sdkVersion.setAdapter(ArrayAdapter(
-        requireContext(),
-        com.google.android.material.R.layout.m3_auto_complete_simple_item,
-        sdkVersions)
-      )
-
+      
       val jdkVersions = JdkVersion.entries.map { "JDK ${it.version}" }
       jdkVersion.setText(jdkVersions[0])
-      jdkVersion.setAdapter(ArrayAdapter(
-        requireContext(),
-        com.google.android.material.R.layout.m3_auto_complete_simple_item,
-        jdkVersions)
-      )
+      
+      installGit.isChecked = true
+      installOpenssh.isChecked = true
     }
 
     updateConnectionStatus()
   }
 
-  fun isAutoInstall(): Boolean = content.autoInstallSwitch.isChecked
+  fun isAutoInstall(): Boolean = true
 
   fun buildIdeSetupArguments(): Array<String> {
     val args = mutableListOf<String>()
     args.setArgument(IdeSetupArgument.INSTALL_DIR, Environment.HOME.absolutePath)
-    args.setArgument(IdeSetupArgument.SDK_VERSION,
-      SdkVersion.fromDisplayName(content.sdkVersion.text).version)
-    args.setArgument(IdeSetupArgument.JDK_VERSION,
-      JdkVersion.fromDisplayName(content.jdkVersion.text).version)
+    
+    // Hard-code the latest SDK version
+    args.setArgument(IdeSetupArgument.SDK_VERSION, "34.0.4")
+    
+    // Use JDK 17
+    args.setArgument(IdeSetupArgument.JDK_VERSION, "17")
+    
+    // Always assume yes
     args.setArgument(IdeSetupArgument.ASSUME_YES)
-    if (content.installGit.isChecked) {
-      args.setArgument(IdeSetupArgument.WITH_GIT)
-    }
-    if (content.installOpenssh.isChecked) {
-      args.setArgument(IdeSetupArgument.WITH_OPENSSH)
-    }
+    
+    // Always include Git and SSH
+    args.setArgument(IdeSetupArgument.WITH_GIT)
+    args.setArgument(IdeSetupArgument.WITH_OPENSSH)
+    
     return args.toTypedArray()
   }
 
@@ -288,5 +292,4 @@ class IdeSetupConfigurationFragment : OnboardingFragment(), SlidePolicy {
       backgroundDataRestrictionReceiver = null
     }
   }
-
 }

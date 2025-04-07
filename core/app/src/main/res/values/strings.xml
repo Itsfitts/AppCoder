@@ -18,4 +18,8 @@
 <resources>
   <!--  Required by F-Droid-->
   <string name="app_name" translatable="false">AndroidIDE</string>
+
+  <!-- New strings for simplified setup -->
+  <string name="msg_simplified_setup" translatable="false">AndroidIDE will automatically install the optimal development environment</string>
+  <string name="msg_simplified_setup_details" translatable="false">The following will be installed automatically: JDK 17, Android SDK 34.0.4, Git and SSH. Just press Continue to begin installation.</string>
 </resources>

@@ -128,9 +128,10 @@ class OnboardingActivity : AppIntro2() {
       addSlide(PermissionsFragment.newInstance(this))
     }
 
-    if (!checkToolsIsInstalled()) {
-      addSlide(IdeSetupConfigurationFragment.newInstance(this))
-    }
+    // Don't add the configuration slide - we'll auto-install with default settings
+    // if (!checkToolsIsInstalled()) {
+    //   addSlide(IdeSetupConfigurationFragment.newInstance(this))
+    // }
   }
 
   override fun onResume() {
@@ -157,6 +158,22 @@ class OnboardingActivity : AppIntro2() {
       return
     }
 
+    // If permissions fragment is the current fragment and permissions are granted,
+    // start installation automatically
+    if (currentFragment is PermissionsFragment && PermissionsFragment.areAllPermissionsGranted(this) && !checkToolsIsInstalled()) {
+      // Create the IdeSetupConfigurationFragment just to build the setup arguments
+      val setupFragment = IdeSetupConfigurationFragment.newInstance(this)
+      
+      // Launch terminal with the setup arguments
+      val intent = Intent(this, TerminalActivity::class.java)
+      intent.putExtra(TerminalActivity.EXTRA_ONBOARDING_RUN_IDESETUP, true)
+      intent.putExtra(TerminalActivity.EXTRA_ONBOARDING_RUN_IDESETUP_ARGS, 
+        setupFragment.buildIdeSetupArguments())
+      terminalActivityCallback.launch(intent)
+      return
+    }
+
+    // Original behavior for configuration fragment if it's still used somewhere
     if (!checkToolsIsInstalled() && currentFragment is IdeSetupConfigurationFragment) {
       val intent = Intent(this, TerminalActivity::class.java)
       if (currentFragment.isAutoInstall()) {

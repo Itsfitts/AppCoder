@@ -48,11 +48,9 @@ class PrivacyPreferences(
   override val title: Int = string.title_privacy,
   override val children: List<IPreference> = mutableListOf()
 ) : IPreferenceGroup() {
-
-  init {
-    addPreference(StatPreferencesScreen())
-  }
+  // Leave this empty or add other privacy-related preferences
 }
+
 
 @Parcelize
 class DeveloperOptionsPreferences(

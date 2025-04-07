@@ -153,7 +153,6 @@ dependencies {
   implementation(projects.event.eventbusEvents)
   implementation(projects.java.javacServices)
   implementation(projects.java.lsp)
-  implementation(projects.logging.idestats)
   implementation(projects.logging.logsender)
   implementation(projects.termux.application)
   implementation(projects.termux.view)

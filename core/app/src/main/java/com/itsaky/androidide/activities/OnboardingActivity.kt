@@ -33,9 +33,9 @@ import com.itsaky.androidide.fragments.onboarding.GreetingFragment
 import com.itsaky.androidide.fragments.onboarding.IdeSetupConfigurationFragment
 import com.itsaky.androidide.fragments.onboarding.OnboardingInfoFragment
 import com.itsaky.androidide.fragments.onboarding.PermissionsFragment
-import com.itsaky.androidide.fragments.onboarding.StatisticsFragment
+// Removed StatisticsFragment import
 import com.itsaky.androidide.models.JdkDistribution
-import com.itsaky.androidide.preferences.internal.StatPreferences
+// Removed StatPreferences import
 import com.itsaky.androidide.preferences.internal.prefManager
 import com.itsaky.androidide.tasks.launchAsyncWithProgress
 import com.itsaky.androidide.ui.themes.IThemeManager
@@ -119,10 +119,11 @@ class OnboardingActivity : AppIntro2() {
       return
     }
 
-    if (!StatPreferences.statConsentDialogShown) {
-      addSlide(StatisticsFragment.newInstance(this))
-      StatPreferences.statConsentDialogShown = true
-    }
+    // Removed statistics consent screen
+    // if (!StatPreferences.statConsentDialogShown) {
+    //   addSlide(StatisticsFragment.newInstance(this))
+    //   StatPreferences.statConsentDialogShown = true
+    // }
 
     if (!PermissionsFragment.areAllPermissionsGranted(this)) {
       addSlide(PermissionsFragment.newInstance(this))
@@ -147,11 +148,13 @@ class OnboardingActivity : AppIntro2() {
   }
 
   override fun onNextPressed(currentFragment: Fragment?) {
-    (currentFragment as? StatisticsFragment?)?.updateStatOptInStatus()
+    // Removed statistics update
+    // (currentFragment as? StatisticsFragment?)?.updateStatOptInStatus()
   }
 
   override fun onDonePressed(currentFragment: Fragment?) {
-    (currentFragment as? StatisticsFragment?)?.updateStatOptInStatus()
+    // Removed statistics update
+    // (currentFragment as? StatisticsFragment?)?.updateStatOptInStatus()
 
     if (!IDEBuildConfigProvider.getInstance().supportsCpuAbi()) {
       finishAffinity()
@@ -163,11 +166,11 @@ class OnboardingActivity : AppIntro2() {
     if (currentFragment is PermissionsFragment && PermissionsFragment.areAllPermissionsGranted(this) && !checkToolsIsInstalled()) {
       // Create the IdeSetupConfigurationFragment just to build the setup arguments
       val setupFragment = IdeSetupConfigurationFragment.newInstance(this)
-      
+
       // Launch terminal with the setup arguments
       val intent = Intent(this, TerminalActivity::class.java)
       intent.putExtra(TerminalActivity.EXTRA_ONBOARDING_RUN_IDESETUP, true)
-      intent.putExtra(TerminalActivity.EXTRA_ONBOARDING_RUN_IDESETUP_ARGS, 
+      intent.putExtra(TerminalActivity.EXTRA_ONBOARDING_RUN_IDESETUP_ARGS,
         setupFragment.buildIdeSetupArguments())
       terminalActivityCallback.launch(intent)
       return
@@ -190,13 +193,14 @@ class OnboardingActivity : AppIntro2() {
 
   private fun checkToolsIsInstalled(): Boolean {
     return IJdkDistributionProvider.getInstance().installedDistributions.isNotEmpty()
-        && Environment.ANDROID_HOME.exists()
+            && Environment.ANDROID_HOME.exists()
   }
 
   private fun isSetupCompleted(): Boolean {
     return checkToolsIsInstalled()
-        && StatPreferences.statConsentDialogShown
-        && PermissionsFragment.areAllPermissionsGranted(this)
+            // Removed statistics consent check
+            // && StatPreferences.statConsentDialogShown
+            && PermissionsFragment.areAllPermissionsGranted(this)
   }
 
   private fun tryNavigateToMainIfSetupIsCompleted(): Boolean {
@@ -231,7 +235,7 @@ class OnboardingActivity : AppIntro2() {
   private fun isInstalledOnSdCard(): Boolean {
     // noinspection SdCardPath
     return PackageUtils.isAppInstalledOnExternalStorage(this) &&
-        TermuxConstants.TERMUX_FILES_DIR_PATH != filesDir.absolutePath
+            TermuxConstants.TERMUX_FILES_DIR_PATH != filesDir.absolutePath
       .replace("^/data/user/0/".toRegex(), "/data/data/")
   }
 

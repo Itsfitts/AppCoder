@@ -307,8 +307,27 @@ if [ ! command -v "$pkgm" ] &>/dev/null; then
   exit 1
 fi
 
+
 # Update repositories and packages
 print_info "Update packages..."
+
+# Fix for expired GPG key issues
+print_info "Adding trusted flag to APT repositories..."
+sources_list="$SYSROOT/etc/apt/sources.list"
+if [ -f "$sources_list" ]; then
+  # Add [trusted=yes] flag to all repository lines
+  sed -i 's/^deb /deb [trusted=yes] /' "$sources_list"
+  print_success "Added trusted flag to APT repositories"
+else
+  print_error "Could not find sources.list file"
+fi
+
+$pkgm update
+if [ "$assume_yes" == "true" ]; then
+  $pkgm upgrade -y
+else
+  $pkgm upgrade
+fi
 
 $pkgm update
 if [ "$assume_yes" == "true" ]; then

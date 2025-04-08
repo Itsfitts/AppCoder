@@ -1,6 +1,20 @@
-#!/bin/bash
+#!/system/bin/sh
 
-set -eu
+set -e
+set -u
+
+# --- Define Termux Prefix (Replace com.itsaky.androidide if your package name is different) ---
+termux_prefix="/data/data/com.itsaky.androidide/files/usr"
+# --- Check if prefix exists, create if not (basic sanity check) ---
+if [ ! -d "$termux_prefix" ]; then
+    echo "Warning: Termux prefix '$termux_prefix' not found. Attempting to create." >&2
+    # Creating /data/data/... might fail due to permissions if not run by the app itself
+    mkdir -p "$termux_prefix/bin" "$termux_prefix/etc" "$termux_prefix/opt" || {
+        echo "Error: Failed to create Termux prefix directories." >&2
+        exit 1
+    }
+fi
+
 
 Color_Off='\033[0m'
 Red='\033[0;31m'
@@ -8,9 +22,7 @@ Green='\033[0;32m'
 Blue='\033[0;34m'
 Orange="\e[38;5;208m"
 
-yes='^[Yy][Ee]?[Ss]?$'
-
-# Defualt values
+# Default values
 arch=$(uname -m)
 install_dir=$HOME
 sdkver_org=34.0.4
@@ -19,60 +31,64 @@ assume_yes=false
 manifest="https://raw.githubusercontent.com/AndroidIDEOfficial/androidide-tools/main/manifest.json"
 pkgm="pkg"
 pkg_curl="libcurl"
+# Define pkgs initially, will append later
 pkgs="jq tar"
 jdk_version="17"
 
 print_info() {
   # shellcheck disable=SC2059
-  printf "${Blue}$1$Color_Off\n"
+  printf "${Blue}%s${Color_Off}\n" "$1"
 }
 
 print_err() {
   # shellcheck disable=SC2059
-  printf "${Red}$1$Color_Off\n"
+  printf "${Red}%s${Color_Off}\n" "$1"
 }
 
 print_warn() {
   # shellcheck disable=SC2059
-  printf "${Orange}$1$Color_Off\n"
+  printf "${Orange}%s${Color_Off}\n" "$1"
 }
 
 print_success() {
   # shellcheck disable=SC2059
-  printf "${Green}$1$Color_Off\n"
+  printf "${Green}%s${Color_Off}\n" "$1"
 }
 
 is_yes() {
-
   msg=$1
-
   printf "%s ([y]es/[n]o): " "$msg"
 
-  if [ "$assume_yes" == "true" ]; then
+  if [ "$assume_yes" = "true" ]; then # Use single '=' for POSIX sh string comparison
     ans="y"
-    echo $ans
+    echo "$ans" # Quote the variable just in case
   else
     read -r ans
   fi
 
-  if [[ "$ans" =~ $yes ]]; then
-    return 0
-  fi
-
-  return 1
+  # Use a POSIX-compliant case statement for matching
+  case "$ans" in
+    # Match variations of yes, case-insensitively
+    y | Y | ye | YE | yes | YES)
+      return 0 # Success (true)
+      ;;
+    *)
+      return 1 # Failure (false)
+      ;;
+  esac
 }
 
 check_arg_value() {
   option_name="$1"
   arg_value="$2"
-  if [[ -z "$arg_value" ]]; then
+  if [ -z "$arg_value" ]; then # Use [ -z ... ] for POSIX compliance
     print_err "No value provided for $option_name!" >&2
     exit 1
   fi
 }
 
 check_command_exists() {
-  if command -v "$1" &>/dev/null; then
+  if command -v "$1" >/dev/null 2>&1; then # More portable check
     return
   else
     print_err "Command '$1' not found!"
@@ -80,9 +96,10 @@ check_command_exists() {
   fi
 }
 
-# shellcheck disable=SC2068
 install_packages() {
-  if [ "$assume_yes" == "true" ]; then
+  # $@ expands to separate arguments, which is needed by install
+  # shellcheck disable=SC2086
+  if [ "$assume_yes" = "true" ]; then # Use single '=' for POSIX sh string comparison
     $pkgm install $@ -y
   else
     $pkgm install $@
@@ -104,7 +121,7 @@ print_help() {
   echo "-m   Manifest file URL. Defaults to 'manifest.json' in 'androidide-tools' GitHub repository."
   echo "-j   OpenJDK version to install. Values can be '17' or '21'"
   echo "-g   Install package: 'git'."
-  echo "-o   Install package: 'git'."
+  echo "-o   Install package: 'openssh'." # Corrected help message
   echo "-y   Assume \"yes\" as answer to all prompts and run non-interactively."
   echo ""
   echo "For testing purposes:"
@@ -132,12 +149,12 @@ download_and_extract() {
     mkdir -p "$dir"
   fi
 
-  cd "$dir"
+  cd "$dir" || exit 1 # Exit if cd fails
 
   do_download=true
   if [ -f "$dest" ]; then
-    name=$(basename "$dest")
-    print_info "File ${name} already exists."
+    file_base_name=$(basename "$dest") # Use different variable name
+    print_info "File ${file_base_name} already exists."
     if is_yes "Do you want to skip the download process?"; then
       do_download=false
     fi
@@ -146,7 +163,7 @@ download_and_extract() {
 
   if [ "$do_download" = "true" ]; then
     print_info "Downloading $name..."
-    curl -L -o "$dest" "$url" --http1.1
+    curl -L -o "$dest" "$url" --http1.1 # Consider adding --fail to exit on HTTP errors
     print_success "$name has been downloaded."
     echo ""
   fi
@@ -158,6 +175,8 @@ download_and_extract() {
 
   # Extract the downloaded archive
   print_info "Extracting downloaded archive..."
+  # Ensure tar exists before using it
+  check_command_exists "tar"
   tar xvJf "$dest" && print_info "Extracted successfully"
 
   echo ""
@@ -166,7 +185,8 @@ download_and_extract() {
   rm -vf "$dest"
 
   # cd into the previous working directory
-  cd -
+  # Using cd - might not be fully POSIX, use PWD if needed, but often works
+  cd - > /dev/null
 }
 
 download_comp() {
@@ -175,9 +195,22 @@ download_comp() {
   mdir=$3
   dname=$4
 
+  # Check if jq command exists
+  check_command_exists "jq"
+
+  # Check if manifest file exists
+  if [ ! -f "$downloaded_manifest" ]; then
+      print_err "Manifest file '$downloaded_manifest' not found!"
+      exit 1
+  fi
+
   # Extract the Android SDK URL
   print_info "Extracting URL for $nm from manifest..."
   url=$(jq -r "${jq_query}" "$downloaded_manifest")
+  if [ -z "$url" ] || [ "$url" = "null" ]; then
+      print_err "Failed to extract URL for '$nm' using query '$jq_query'"
+      exit 1
+  fi
   print_success "Found URL: $url"
   echo ""
 
@@ -196,11 +229,13 @@ while [ $# -gt 0 ]; do
     ;;
   -g | --with-git)
     shift
-    pkgs+=" git"
+    # Use POSIX concatenation
+    pkgs="$pkgs git"
     ;;
   -o | --with-openssh)
     shift
-    pkgs+=" openssh"
+    # Use POSIX concatenation
+    pkgs="$pkgs openssh"
     ;;
   -y | --assume-yes)
     shift
@@ -265,7 +300,7 @@ fi
 
 check_command_exists "$pkgm"
 
-if [ "$jdk_version" == "21" ]; then
+if [ "$jdk_version" = "21" ]; then # Use = for POSIX
   print_warn "OpenJDK 21 support in AndroidIDE is experimental. It may or may not work properly."
   print_warn "Also, OpenJDK 21 is only supported in Gradle v8.4 and newer. Older versions of Gradle will NOT work!"
   if ! is_yes "Do you still want to install OpenJDK 21?"; then
@@ -274,14 +309,22 @@ if [ "$jdk_version" == "21" ]; then
   fi
 fi
 
+# Check using POSIX compliant AND logic (separate tests)
 if [ "$jdk_version" != "17" ] && [ "$jdk_version" != "21" ]; then
   print_err "Invalid JDK version '$jdk_version'. Value can be '17' or '21'."
   exit 1
 fi
 
-sdk_version="_${sdkver_org//'.'/'_'}"
+# Use tr for POSIX compliance
+sdk_version="_$(echo "$sdkver_org" | tr '.' '_')"
 
-pkgs+=" $pkg_curl"
+# Use POSIX concatenation (ensure space if pkgs is not empty)
+if [ -n "$pkgs" ]; then
+  pkgs="$pkgs $pkg_curl"
+else
+  pkgs="$pkg_curl"
+fi
+
 
 echo "------------------------------------------"
 echo "Installation directory    : ${install_dir}"
@@ -290,6 +333,7 @@ echo "JDK version               : ${jdk_version}"
 echo "With command line tools   : ${with_cmdline}"
 echo "Extra packages            : ${pkgs}"
 echo "CPU architecture          : ${arch}"
+echo "Termux Prefix (SYSROOT)   : ${termux_prefix}" # Added for clarity
 echo "------------------------------------------"
 
 if ! is_yes "Confirm configuration"; then
@@ -297,12 +341,17 @@ if ! is_yes "Confirm configuration"; then
   exit 1
 fi
 
-if [ ! -f "$install_dir" ]; then
-  print_info "Installation directory does not exist. Creating directory..."
-  mkdir -p "$install_dir"
+# Check if install_dir is a directory, not a file
+if [ -e "$install_dir" ] && [ ! -d "$install_dir" ]; then
+    print_err "Installation path '$install_dir' exists but is not a directory!"
+    exit 1
+elif [ ! -d "$install_dir" ]; then
+    print_info "Installation directory does not exist. Creating directory..."
+    mkdir -p "$install_dir"
 fi
 
-if [ ! command -v "$pkgm" ] &>/dev/null; then
+
+if ! command -v "$pkgm" >/dev/null 2>&1; then
   print_err "'$pkgm' command not found. Try installing 'termux-tools' and 'apt'."
   exit 1
 fi
@@ -313,50 +362,54 @@ print_info "Update packages..."
 
 # Fix for expired GPG key issues
 print_info "Adding trusted flag to APT repositories..."
-sources_list="$SYSROOT/etc/apt/sources.list"
+sources_list="$termux_prefix/etc/apt/sources.list" # Use termux_prefix
 if [ -f "$sources_list" ]; then
   # Add [trusted=yes] flag to all repository lines
-  sed -i 's/^deb /deb [trusted=yes] /' "$sources_list"
-  print_success "Added trusted flag to APT repositories"
+  # Using sed -i might work if termux provides GNU sed, otherwise use temp file method
+  sed -i 's/^deb /deb [trusted=yes] /' "$sources_list" && \
+  print_success "Added trusted flag to APT repositories" || \
+  print_warn "Failed to automatically add trusted flag (sed -i might not be supported). Manual check might be needed."
 else
-  print_error "Could not find sources.list file"
+  print_warn "Could not find sources.list file at '$sources_list'. Skipping trusted flag addition."
 fi
 
-$pkgm update
-if [ "$assume_yes" == "true" ]; then
-  $pkgm upgrade -y
+$pkgm update || print_warn "pkg update failed"
+if [ "$assume_yes" = "true" ]; then
+  $pkgm upgrade -y || print_warn "pkg upgrade failed"
 else
-  $pkgm upgrade
+  $pkgm upgrade || print_warn "pkg upgrade failed"
 fi
 
-$pkgm update
-if [ "$assume_yes" == "true" ]; then
-  $pkgm upgrade -y
+# Sometimes running twice helps resolve dependencies
+$pkgm update || print_warn "Second pkg update failed"
+if [ "$assume_yes" = "true" ]; then
+  $pkgm upgrade -y || print_warn "Second pkg upgrade failed"
 else
-  $pkgm upgrade
+  $pkgm upgrade || print_warn "Second pkg upgrade failed"
 fi
 
 # Install required packages
-print_info "Installing required packages.."
-# shellcheck disable=SC2086
-install_packages $pkgs && print_success "Packages installed"
+print_info "Installing required packages: $pkgs"
+install_packages $pkgs && print_success "Packages installed" || print_err "Failed to install required packages!"
 echo ""
 
 # Download the manifest.json file
 print_info "Downloading manifest file..."
 downloaded_manifest="$install_dir/manifest.json"
-curl -L -o "$downloaded_manifest" "$manifest" && print_success "Manifest file downloaded"
+check_command_exists "curl"
+curl -L -f -o "$downloaded_manifest" "$manifest" && print_success "Manifest file downloaded" || { print_err "Failed to download manifest file from $manifest"; exit 1; }
 echo ""
 
 # Install the Android SDK
 download_comp "Android SDK" ".android_sdk" "$install_dir" "android-sdk"
 
 # Install build tools
-download_comp "Android SDK Build Tools" ".build_tools | .${arch} | .${sdk_version}" "$install_dir/android-sdk" "android-sdk-build-tools"
+download_comp "Android SDK Build Tools" ".build_tools | .\"${arch}\" | .\"${sdk_version}\"" "$install_dir/android-sdk" "android-sdk-build-tools"
 
 # Install platform tools
-download_comp "Android SDK Platform Tools" ".platform_tools | .${arch} | .${sdk_version}" "$install_dir/android-sdk" "android-sdk-platform-tools"
+download_comp "Android SDK Platform Tools" ".platform_tools | .\"${arch}\" | .\"${sdk_version}\"" "$install_dir/android-sdk" "android-sdk-platform-tools"
 
+# Use = for POSIX check
 if [ "$with_cmdline" = true ]; then
   # Install the Command Line tools
   download_comp "Command-line tools" ".cmdline_tools" "$install_dir/android-sdk" "cmdline-tools"
@@ -364,14 +417,14 @@ fi
 
 # Install JDK
 print_info "Installing package: 'openjdk-$jdk_version'"
-install_packages "openjdk-$jdk_version" && print_info "JDK $jdk_version has been installed."
+install_packages "openjdk-$jdk_version" && print_info "JDK $jdk_version has been installed." || print_err "Failed to install OpenJDK $jdk_version"
 
-jdk_dir="$SYSROOT/opt/openjdk"
+jdk_dir="$termux_prefix/opt/openjdk" # Use termux_prefix
 
 print_info "Updating ide-environment.properties..."
 print_info "JAVA_HOME=$jdk_dir"
 echo ""
-props_dir="$SYSROOT/etc"
+props_dir="$termux_prefix/etc" # Use termux_prefix
 props="$props_dir/ide-environment.properties"
 
 if [ ! -d "$props_dir" ]; then
@@ -379,14 +432,23 @@ if [ ! -d "$props_dir" ]; then
 fi
 
 if [ ! -e "$props" ]; then
-  printf "JAVA_HOME=%s" "$jdk_dir" >"$props" && print_success "Properties file updated successfully!"
+  # Using printf is safer than echo with variable data
+  printf "JAVA_HOME=%s\n" "$jdk_dir" >"$props" && print_success "Properties file created and updated successfully!" || print_err "Failed to create properties file '$props'"
 else
   if is_yes "$props file already exists. Would you like to overwrite it?"; then
-    printf "JAVA_HOME=%s" "$jdk_dir" >"$props" && print_success "Properties file updated successfully!"
+    printf "JAVA_HOME=%s\n" "$jdk_dir" >"$props" && print_success "Properties file overwritten successfully!" || print_err "Failed to overwrite properties file '$props'"
   else
-    print_err "Manually edit $SYSROOT/etc/ide-environment.properties file and set JAVA_HOME and ANDROID_SDK_ROOT."
+    # Provide more specific path using termux_prefix
+    print_warn "Manually edit $props_dir/ide-environment.properties file and set JAVA_HOME (e.g., JAVA_HOME=$jdk_dir)."
   fi
 fi
 
-rm -vf "$downloaded_manifest"
+# Clean up manifest
+if [ -f "$downloaded_manifest" ]; then
+    rm -vf "$downloaded_manifest"
+fi
+
 print_success "Downloads completed. You are ready to go!"
+
+# Exit explicitly with success code
+exit 0

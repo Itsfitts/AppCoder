@@ -1,0 +1,27 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<!--
+3  ~  This file is part of AndroidIDE.
+4  ~
+5  ~  AndroidIDE is free software: you can redistribute it and/or modify
+6  ~  it under the terms of the GNU General Public License as published by
+7  ~  the Free Software Foundation, either version 3 of the License, or
+8  ~  (at your option) any later version.
+9  ~
+10  ~  AndroidIDE is distributed in the hope that it will be useful,
+11  ~  but WITHOUT ANY WARRANTY; without even the implied warranty of
+12  ~  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+13  ~  GNU General Public License for more details.
+14  ~
+15  ~  You should have received a copy of the GNU General Public License
+16  ~   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
+17-->
+18<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+19    package="com.itsaky.androidide.stats" >
+20
+21    <uses-sdk android:minSdkVersion="26" />
+22
+23    <uses-permission android:name="android.permission.INTERNET" />
+23-->C:\Users\chris\OneDrive\Dokumente\GitHub\AppCoder\logging\idestats\src\main\AndroidManifest.xml:20:3-64
+23-->C:\Users\chris\OneDrive\Dokumente\GitHub\AppCoder\logging\idestats\src\main\AndroidManifest.xml:20:20-62
+24
+25</manifest>

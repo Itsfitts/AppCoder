@@ -22,4 +22,18 @@
   <!-- New strings for simplified setup -->
   <string name="msg_simplified_setup" translatable="false">AndroidIDE will automatically install the optimal development environment</string>
   <string name="msg_simplified_setup_details" translatable="false">The following will be installed automatically: JDK 17, Android SDK 34.0.4, Git and SSH. Just press Continue to begin installation.</string>
+
+  <string name="fab_description">Edit file</string>
+
+  <!-- Strings needed by MainActivity -->
+  <string name="msg_opened_project_does_not_exist">Opened project does not exist or path is invalid.</string>
+  <string name="title_confirm_open_project">Confirm Open Project</string>
+  <!-- Note: %1$s is a placeholder for the project path -->
+  <string name="msg_confirm_open_project">Do you want to open the project located at \n%1$s?</string>
+  <string name="yes">Yes</string>
+  <string name="no">No</string>
+  <string name="msg_storage_permission_required">Storage permission is required to edit project files.</string>
+  <string name="msg_external_storage_unavailable">External storage not available.</string>
+  <string name="msg_project_path_not_directory">Project storage path exists but is not a directory.</string>
+
 </resources>

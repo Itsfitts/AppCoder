@@ -97,7 +97,7 @@ object BuildPreferences {
    * Whether the app should be launched automatically after installation (after build).
    */
   var launchAppAfterInstall: Boolean
-    get() = prefManager.getBoolean(LAUNCH_APP_AFTER_INSTALL, false)
+    get() = prefManager.getBoolean(LAUNCH_APP_AFTER_INSTALL, true) // Changed default from false to true for automatic launch after installation.
     set(value) {
       prefManager.putBoolean(LAUNCH_APP_AFTER_INSTALL, value)
     }

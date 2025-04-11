@@ -1,5 +1,7 @@
 AppCoder is a mobile app that lets you build fully functional apps directly on your phone — no programming experience required.
 
+CURRENTLY THIS PROJECT IS ST&ILL IN A DEVELOPNMENT PHASE. AND THERE IS NO .APK FILE YET TO DIRECTLY DOWNLOAD. STAY TUNED FOR FURTHER UPDATES.
+
 Powered by advanced large language models like Chat6PT, AppCoder turns plain English descriptions into real, working code. Just describe what you envision, some back and forth with the AppCoder to iron out any bugs and your app is ready.
 
 Designed for non-programmers, AppCoder removes all barriers to app creation. 

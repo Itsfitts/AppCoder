@@ -12,8 +12,8 @@
 
 ## Description
 
-Powered by advanced large language models like **Chat6PT**, AppCoder turns plain English descriptions into real, working code.  
-Simply describe what you envision, engage in a bit of back and forth to iron out any bugs, and your app is ready.
+Powered by advanced large language models like **ChatGPT**, AppCoder turns plain English descriptions into real, working code.  
+Simply describe what you envision, engage in a bit of back and forth to let ChatGPT iron out any bugs, and your app is ready.
 
 AppCoder is designed for non-programmers, removing all barriers to app creation. It also serves as a great tool for experienced developers who need to rapidly prototype an idea or test concepts.
 

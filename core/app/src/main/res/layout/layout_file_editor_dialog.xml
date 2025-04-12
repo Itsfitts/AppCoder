@@ -5,6 +5,31 @@
     android:orientation="vertical"
     android:padding="16dp">
 
+    <!-- Search field -->
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/search_layout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Search files"
+        android:layout_marginBottom="8dp">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/search_input"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="text"
+            android:imeOptions="actionSearch" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <!-- File list in a scrollable container -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/files_list"
+        android:layout_width="match_parent"
+        android:layout_height="200dp"
+        android:scrollbars="vertical"
+        android:background="#F5F5F5"
+        android:layout_marginBottom="16dp" />
+
     <com.google.android.material.textfield.TextInputLayout
         android:id="@+id/project_name_layout"
         android:layout_width="match_parent"
@@ -24,7 +49,7 @@
         android:id="@+id/file_name_layout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="File Path (e.g., app/src/main/res/layout/file.xml)"
+        android:hint="File Name"
         android:layout_marginBottom="8dp">
 
         <com.google.android.material.textfield.TextInputEditText
@@ -50,5 +75,4 @@
             android:gravity="top|start"
             android:imeOptions="actionDone" />
     </com.google.android.material.textfield.TextInputLayout>
-
 </LinearLayout>

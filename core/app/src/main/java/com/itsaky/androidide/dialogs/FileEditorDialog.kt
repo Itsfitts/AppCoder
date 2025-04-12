@@ -2,6 +2,8 @@ package com.itsaky.androidide.dialogs
 
 import android.app.Dialog
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.util.Log
 import android.view.LayoutInflater
 import android.widget.Button
@@ -9,18 +11,30 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.os.bundleOf
 import androidx.fragment.app.DialogFragment
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.textfield.TextInputEditText
 import com.itsaky.androidide.R
+import com.itsaky.androidide.adapters.FileListAdapter
+import com.itsaky.androidide.utils.FileUtil
 import java.io.File
+import java.io.FileReader
 import java.io.FileWriter
 import java.io.IOException
+import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.concurrent.thread
 
 class FileEditorDialog : DialogFragment() {
 
     private lateinit var projectNameInput: TextInputEditText
     private lateinit var fileNameInput: TextInputEditText
     private lateinit var fileContentInput: TextInputEditText
+    private lateinit var searchInput: TextInputEditText
+    private lateinit var filesList: RecyclerView
     private lateinit var projectsBaseDir: File
+    
+    private lateinit var fileAdapter: FileListAdapter
+    private var allFiles = CopyOnWriteArrayList<File>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,9 +53,20 @@ class FileEditorDialog : DialogFragment() {
         val inflater = requireActivity().layoutInflater
         val view = inflater.inflate(R.layout.layout_file_editor_dialog, null)
 
+        // Initialize the original input fields
         projectNameInput = view.findViewById(R.id.project_name_input)
         fileNameInput = view.findViewById(R.id.file_name_input)
         fileContentInput = view.findViewById(R.id.file_content_input)
+        
+        // Initialize the new search and file list components
+        searchInput = view.findViewById(R.id.search_input)
+        filesList = view.findViewById(R.id.files_list)
+        
+        // Setup RecyclerView with adapter
+        setupFileList()
+        
+        // Setup search functionality
+        setupSearchInput()
 
         builder.setView(view)
             .setTitle("Edit File Content")
@@ -59,6 +84,118 @@ class FileEditorDialog : DialogFragment() {
             }
         }
         return dialog
+    }
+    
+    private fun setupFileList() {
+        fileAdapter = FileListAdapter(emptyList()) { file ->
+            onFileSelected(file)
+        }
+        
+        filesList.layoutManager = LinearLayoutManager(requireContext())
+        filesList.adapter = fileAdapter
+        
+        // Load all files in the project directory
+        loadFilesFromDirectory(projectsBaseDir)
+    }
+    
+    private fun setupSearchInput() {
+        searchInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                filterFiles(s.toString())
+            }
+        })
+    }
+    
+    private fun loadFilesFromDirectory(directory: File) {
+        if (!directory.exists() || !directory.isDirectory) {
+            Log.e(TAG, "Invalid directory: ${directory.absolutePath}")
+            return
+        }
+        
+        thread {
+            val files = mutableListOf<File>()
+            collectAllFiles(directory, files)
+            
+            activity?.runOnUiThread {
+                allFiles.clear()
+                allFiles.addAll(files)
+                fileAdapter.updateFiles(allFiles)
+            }
+        }
+    }
+    
+    private fun collectAllFiles(dir: File, result: MutableList<File>) {
+        if (!dir.exists() || !dir.isDirectory) return
+        
+        val files = dir.listFiles() ?: return
+        for (file in files) {
+            if (file.isDirectory) {
+                collectAllFiles(file, result)
+            } else if (!file.name.startsWith(".")) { // Skip hidden files
+                result.add(file)
+            }
+        }
+    }
+    
+    private fun filterFiles(query: String) {
+        if (query.isEmpty()) {
+            fileAdapter.updateFiles(allFiles)
+            return
+        }
+        
+        val lowerCaseQuery = query.lowercase()
+        val filteredFiles = allFiles.filter {
+            it.name.lowercase().contains(lowerCaseQuery) ||
+            it.absolutePath.lowercase().contains(lowerCaseQuery)
+        }
+        
+        fileAdapter.updateFiles(filteredFiles)
+    }
+    
+    private fun onFileSelected(file: File) {
+        try {
+            // Get the relative path of the file within the project
+            val absolutePath = file.absolutePath
+            val relativePath = if (absolutePath.startsWith(projectsBaseDir.absolutePath)) {
+                val baseDirPath = projectsBaseDir.absolutePath
+                val pathAfterBaseDir = absolutePath.substring(baseDirPath.length)
+                
+                // Extract project name (first directory after base dir)
+                val pathParts = pathAfterBaseDir.trim('/').split('/')
+                if (pathParts.isNotEmpty()) {
+                    val projectName = pathParts[0]
+                    projectNameInput.setText(projectName)
+                    
+                    // Set file path relative to project
+                    if (pathParts.size > 1) {
+                        val relativeToProject = pathAfterBaseDir.substring(projectName.length + 1)
+                        fileNameInput.setText(relativeToProject.trimStart('/'))
+                    } else {
+                        fileNameInput.setText("")
+                    }
+                }
+                
+                pathAfterBaseDir.trimStart('/')
+            } else {
+                // If the file is outside the projects base directory, just use filename
+                projectNameInput.setText("")
+                fileNameInput.setText(file.name)
+                file.name
+            }
+            
+            // Load the file content
+            try {
+                val content = FileReader(file).use { it.readText() }
+                fileContentInput.setText(content)
+            } catch (e: IOException) {
+                Log.e(TAG, "Error reading file content", e)
+                Toast.makeText(requireContext(), "Error reading file: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error processing selected file", e)
+        }
     }
 
     private fun validateInputs(): Boolean {

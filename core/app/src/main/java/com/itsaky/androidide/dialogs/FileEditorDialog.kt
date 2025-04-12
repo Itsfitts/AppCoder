@@ -1,5 +1,6 @@
 package com.itsaky.androidide.dialogs
 
+// Existing imports
 import android.app.Dialog
 import android.os.Bundle
 import android.text.Editable
@@ -16,12 +17,24 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.textfield.TextInputEditText
 import com.itsaky.androidide.R
 import com.itsaky.androidide.adapters.FileListAdapter
-import com.itsaky.androidide.utils.FileUtil
+
+// Add these imports for OkHttp
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.MediaType.Companion.toMediaType  // Added import
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody  // Added import
+import okhttp3.Response
+import org.json.JSONObject
+
+// Other imports
 import java.io.File
 import java.io.FileReader
 import java.io.FileWriter
 import java.io.IOException
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.regex.Pattern
 import kotlin.concurrent.thread
 
 class FileEditorDialog : DialogFragment() {
@@ -30,11 +43,18 @@ class FileEditorDialog : DialogFragment() {
     private lateinit var fileNameInput: TextInputEditText
     private lateinit var fileContentInput: TextInputEditText
     private lateinit var searchInput: TextInputEditText
+    private lateinit var geminiPromptInput: TextInputEditText
+    private lateinit var applyGeminiButton: Button
     private lateinit var filesList: RecyclerView
     private lateinit var projectsBaseDir: File
     
     private lateinit var fileAdapter: FileListAdapter
     private var allFiles = CopyOnWriteArrayList<File>()
+    
+    // Gemini API key - In production, store this securely, e.g. in BuildConfig
+    // TODO: You need to add your API here.
+    private val GEMINI_API_KEY = "Your_GEMINI_API_Here"
+    private val client = OkHttpClient()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,11 +82,18 @@ class FileEditorDialog : DialogFragment() {
         searchInput = view.findViewById(R.id.search_input)
         filesList = view.findViewById(R.id.files_list)
         
+        // Initialize Gemini components
+        geminiPromptInput = view.findViewById(R.id.gemini_prompt_input)
+        applyGeminiButton = view.findViewById(R.id.apply_gemini_button)
+        
         // Setup RecyclerView with adapter
         setupFileList()
         
         // Setup search functionality
         setupSearchInput()
+        
+        // Setup Gemini button click listener
+        setupGeminiButton()
 
         builder.setView(view)
             .setTitle("Edit File Content")
@@ -84,6 +111,134 @@ class FileEditorDialog : DialogFragment() {
             }
         }
         return dialog
+    }
+    
+    private fun setupGeminiButton() {
+        applyGeminiButton.setOnClickListener {
+            val currentContent = fileContentInput.text.toString()
+            val prompt = geminiPromptInput.text.toString()
+            
+            if (currentContent.isEmpty()) {
+                Toast.makeText(requireContext(), "No file content to modify", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            
+            if (prompt.isEmpty()) {
+                Toast.makeText(requireContext(), "Please provide instructions for Gemini", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            
+            callGeminiAPI(currentContent, prompt)
+        }
+    }
+    
+    private fun callGeminiAPI(fileContent: String, instructions: String) {
+        val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$GEMINI_API_KEY"
+        
+        val prompt = """
+            I have the following code: $fileContent
+            
+            I want you to $instructions
+            
+            Place your modified code between <Modefied_Code_Start> and <Modefied_Code_End> tags, and do not include any explanations.
+        """.trimIndent()
+        
+        val requestJson = JSONObject().apply {
+            put("contents", JSONObject().apply {
+                put("parts", JSONObject().apply {
+                    put("text", prompt)
+                })
+            })
+        }
+        
+        val mediaType = "application/json".toMediaType()
+        val requestBody = requestJson.toString().toRequestBody(mediaType)
+        
+        val request = Request.Builder()
+            .url(url)
+            .post(requestBody)
+            .build()
+        
+        // Show loading indicator
+        activity?.runOnUiThread {
+            applyGeminiButton.isEnabled = false
+            applyGeminiButton.text = "Processing..."
+        }
+            
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                activity?.runOnUiThread {
+                    Toast.makeText(requireContext(), "API Error: ${e.message}", Toast.LENGTH_LONG).show()
+                    applyGeminiButton.isEnabled = true
+                    applyGeminiButton.text = "Apply Gemini Changes"
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                try {
+                    val responseBody = response.body?.string()
+                    val jsonResponse = JSONObject(responseBody ?: "")
+                    
+                    if (jsonResponse.has("candidates")) {
+                        val textResponse = jsonResponse.getJSONArray("candidates")
+                            .getJSONObject(0)
+                            .getJSONObject("content")
+                            .getJSONArray("parts")
+                            .getJSONObject(0)
+                            .getString("text")
+                        
+                        // Extract code between the tags
+                        val extractedCode = extractCodeFromResponse(textResponse)
+                        
+                        activity?.runOnUiThread {
+                            fileContentInput.setText(extractedCode)
+                            Toast.makeText(requireContext(), "Gemini changes applied!", Toast.LENGTH_SHORT).show()
+                            applyGeminiButton.isEnabled = true
+                            applyGeminiButton.text = "Apply Gemini Changes"
+                        }
+                    } else if (jsonResponse.has("promptFeedback") && 
+                              jsonResponse.getJSONObject("promptFeedback").has("blockReason")) {
+                        val blockReason = jsonResponse.getJSONObject("promptFeedback").getString("blockReason")
+                        activity?.runOnUiThread {
+                            Toast.makeText(requireContext(), "Response blocked: $blockReason", Toast.LENGTH_LONG).show()
+                            applyGeminiButton.isEnabled = true
+                            applyGeminiButton.text = "Apply Gemini Changes"
+                        }
+                    } else {
+                        activity?.runOnUiThread {
+                            Toast.makeText(requireContext(), "Empty or unexpected response from API", Toast.LENGTH_LONG).show()
+                            applyGeminiButton.isEnabled = true
+                            applyGeminiButton.text = "Apply Gemini Changes"
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error parsing API response", e)
+                    activity?.runOnUiThread {
+                        Toast.makeText(requireContext(), "Error processing response: ${e.message}", Toast.LENGTH_LONG).show()
+                        applyGeminiButton.isEnabled = true
+                        applyGeminiButton.text = "Apply Gemini Changes"
+                    }
+                }
+            }
+        })
+    }
+    
+    private fun extractCodeFromResponse(response: String): String {
+        val pattern = Pattern.compile("<Modefied_Code_Start>(.*?)<Modefied_Code_End>", Pattern.DOTALL)
+        val matcher = pattern.matcher(response)
+        
+        return if (matcher.find()) {
+            // Get the content between tags
+            val codeWithMarkdown = matcher.group(1)?.trim() ?: response
+            
+            // Remove markdown code block markers if present (```language and ```)
+            codeWithMarkdown.replace(Regex("^```\\w*\\s*", RegexOption.MULTILINE), "")
+                            .replace(Regex("```\\s*$", RegexOption.MULTILINE), "")
+                            .trim()
+        } else {
+            // If tags aren't found, return the whole response as a fallback
+            response
+        }
     }
     
     private fun setupFileList() {

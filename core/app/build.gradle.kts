@@ -178,4 +178,7 @@ dependencies {
 
   testImplementation(projects.testing.unitTest)
   androidTestImplementation(projects.testing.androidTest)
+
+  // for the llm integration with gemini
+  implementation("com.squareup.okhttp3:okhttp:4.10.0")
 }

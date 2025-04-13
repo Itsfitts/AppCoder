@@ -36,4 +36,5 @@
   <string name="msg_external_storage_unavailable">External storage not available.</string>
   <string name="msg_project_path_not_directory">Project storage path exists but is not a directory.</string>
 
+  <string name="action_continue_to_build">Continue to Build</string>
 </resources>

@@ -10,94 +10,34 @@
         android:orientation="vertical"
         android:padding="16dp">
 
-        <!-- Search field -->
+        <!-- App Name field -->
         <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/search_layout"
+            android:id="@+id/app_name_layout"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="Search files"
+            android:hint="App Name"
             android:layout_marginBottom="8dp">
 
             <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/search_input"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="text"
-                android:imeOptions="actionSearch" />
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <!-- File list in a scrollable container -->
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/files_list"
-            android:layout_width="match_parent"
-            android:layout_height="200dp"
-            android:scrollbars="vertical"
-            android:background="#F5F5F5"
-            android:layout_marginBottom="16dp" />
-
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/project_name_layout"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="Project Name"
-            android:layout_marginBottom="8dp">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/project_name_input"
+                android:id="@+id/app_name_input"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:inputType="text"
                 android:imeOptions="actionNext" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <!-- App Description field -->
         <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/file_name_layout"
+            android:id="@+id/app_description_layout"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="File Name"
+            android:hint="App Description (What should this app do?)"
             android:layout_marginBottom="8dp">
 
             <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/file_name_input"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="text"
-                android:imeOptions="actionNext" />
-        </com.google.android.material.textfield.TextInputLayout>
-        
-        <!-- Gemini Prompt Field -->
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/gemini_prompt_layout"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="Gemini Instructions"
-            android:layout_marginBottom="8dp">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/gemini_prompt_input"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="textMultiLine"
-                android:minLines="3"
-                android:gravity="top|start"
-                android:imeOptions="actionNext" />
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <Button
-            android:id="@+id/apply_gemini_button"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Apply Gemini Changes"
-            android:layout_marginBottom="8dp"/>
-
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/file_content_layout"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="File Content">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/file_content_input"
+                android:id="@+id/app_description_input"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:inputType="textMultiLine"
@@ -105,5 +45,82 @@
                 android:gravity="top|start"
                 android:imeOptions="actionDone" />
         </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Generate Button (Now triggers the full workflow) -->
+        <Button
+            android:id="@+id/generate_app_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Generate &amp; Modify App"
+            android:layout_marginBottom="8dp"/>
+
+        <!-- Loading Indicator -->
+        <ProgressBar
+            android:id="@+id/loading_indicator"
+            style="?android:attr/progressBarStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:visibility="gone"
+            android:layout_marginBottom="8dp"/>
+
+        <!-- Status Area -->
+        <TextView
+            android:id="@+id/status_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Ready"
+            android:textAppearance="?attr/textAppearanceBody2"
+            android:layout_marginBottom="8dp"/>
+
+        <!-- Log output area -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/log_output_layout"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Generation Log">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/log_output"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textMultiLine"
+                android:minLines="10"
+                android:maxLines="15"
+                android:gravity="top|start"
+                android:focusable="false"
+                android:clickable="false"
+                android:scrollbars="vertical"/>
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Action Buttons (Initially hidden) -->
+        <LinearLayout
+            android:id="@+id/action_buttons_layout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:visibility="gone"
+            android:layout_marginTop="8dp">
+
+            <Button
+                android:id="@+id/continue_button"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/action_continue_to_build"
+                android:layout_marginEnd="4dp"/>
+
+            <Button
+                android:id="@+id/modify_further_button"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Modify Further"
+                android:layout_marginStart="4dp"/>
+        </LinearLayout>
+
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

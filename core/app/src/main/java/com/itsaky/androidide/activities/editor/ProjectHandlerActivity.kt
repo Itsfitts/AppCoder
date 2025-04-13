@@ -17,6 +17,8 @@
 
 package com.itsaky.androidide.activities.editor
 
+import android.os.Handler
+import android.os.Looper
 import android.content.Intent
 import android.os.Bundle
 import android.view.Gravity
@@ -25,6 +27,7 @@ import android.widget.CheckBox
 import androidx.activity.viewModels
 import androidx.annotation.GravityInt
 import androidx.appcompat.app.AlertDialog
+import androidx.lifecycle.lifecycleScope
 import com.blankj.utilcode.util.SizeUtils
 import com.blankj.utilcode.util.ThreadUtils
 import com.itsaky.androidide.R
@@ -38,8 +41,10 @@ import com.itsaky.androidide.handlers.LspHandler.destroyLanguageServers
 import com.itsaky.androidide.lookup.Lookup
 import com.itsaky.androidide.lsp.IDELanguageClientImpl
 import com.itsaky.androidide.lsp.java.utils.CancelChecker
+import com.itsaky.androidide.models.ApkMetadata
 import com.itsaky.androidide.preferences.internal.GeneralPreferences
 import com.itsaky.androidide.projects.GradleProject
+import com.itsaky.androidide.projects.android.AndroidModule
 import com.itsaky.androidide.projects.builder.BuildService
 import com.itsaky.androidide.projects.internal.ProjectManagerImpl
 import com.itsaky.androidide.services.builder.GradleBuildService
@@ -56,8 +61,10 @@ import com.itsaky.androidide.tooling.api.messages.result.TaskExecutionResult.Fai
 import com.itsaky.androidide.tooling.api.messages.result.TaskExecutionResult.Failure.PROJECT_NOT_FOUND
 import com.itsaky.androidide.tooling.api.models.BuildVariantInfo
 import com.itsaky.androidide.tooling.api.models.mapToSelectedVariants
+import com.itsaky.androidide.utils.ApkInstaller
 import com.itsaky.androidide.utils.DURATION_INDEFINITE
 import com.itsaky.androidide.utils.DialogUtils.newMaterialDialogBuilder
+import com.itsaky.androidide.utils.InstallationResultHandler
 import com.itsaky.androidide.utils.RecursiveFileSearcher
 import com.itsaky.androidide.utils.flashError
 import com.itsaky.androidide.utils.flashbarBuilder
@@ -67,6 +74,7 @@ import com.itsaky.androidide.utils.withIcon
 import com.itsaky.androidide.viewmodel.BuildVariantsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.CompletableFuture
 import java.util.regex.Pattern
@@ -537,11 +545,78 @@ abstract class ProjectHandlerActivity : BaseEditorActivity() {
     editorViewModel.isInitializing = false
     manager.projectInitialized = true
 
+    initiateAutoQuickRun()
+
     if (mFindInProjectDialog?.isShowing == true) {
       mFindInProjectDialog!!.dismiss()
     }
 
     mFindInProjectDialog = null // Create the dialog again if needed
+  }
+
+  private fun initiateAutoQuickRun() {
+    log.info("Initiating automatic Quick Run after project initialization.")
+
+    // Simple delay to ensure the UI is ready
+    Handler(Looper.getMainLooper()).postDelayed({
+        try {
+            val manager = ProjectManagerImpl.getInstance()
+            val workspace = manager.getWorkspace() ?: run {
+                log.error("Cannot auto quick run: Workspace not available.")
+                return@postDelayed
+            }
+
+            // Find the first application module
+            val module = workspace.getSubProjects().filterIsInstance<AndroidModule>().firstOrNull { it.isApplication } ?: run {
+                log.error("Cannot auto quick run: No application module found.")
+                return@postDelayed
+            }
+
+            // Find and click the Quick Run button by searching all menu items
+            val toolbar = content.editorToolbar
+            var found = false
+            
+            for (i in 0 until toolbar.menu.size()) {
+                val item = toolbar.menu.getItem(i)
+                
+                // Look for menu items that contain "run" in their title or content description
+                if (item.title?.toString()?.contains("run", ignoreCase = true) == true || 
+                    item.contentDescription?.toString()?.contains("run", ignoreCase = true) == true) {
+                    
+                    log.info("Found Quick Run menu item: '${item.title}', trying to click it")
+                    toolbar.menu.performIdentifierAction(item.itemId, 0)
+                    found = true
+                    break
+                }
+            }
+            
+            if (!found) {
+                log.error("Could not find Run button in the toolbar - no matching menu item found")
+            }
+        } catch (e: Exception) {
+            log.error("Error during automatic Quick Run simulation", e)
+            // Add UI feedback if needed, ensuring it runs on the main thread
+            runOnUiThread {
+                flashError("Error trying to auto-run: ${e.message}")
+            }
+        }
+    }, 1000) // 1 second delay
+  }
+
+  private fun installApk(apk: File) {
+      runOnUiThread {
+          log.debug("Auto Quick Run: Installing APK: {}", apk)
+          if (!apk.exists()) {
+              log.error("Auto Quick Run: APK file does not exist!")
+              return@runOnUiThread
+          }
+          ApkInstaller.installApk(
+              this, // Activity context
+              InstallationResultHandler.createEditorActivitySender(this),
+              apk,
+              installationSessionCallback() // Assuming this method exists in BaseEditorActivity or similar
+          )
+      }
   }
 
   private fun updateBuildVariants(buildVariants: Map<String, BuildVariantInfo>) {

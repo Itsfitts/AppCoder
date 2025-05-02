@@ -1,3 +1,4 @@
+
 /*
  *  This file is part of AndroidIDE.
  *
@@ -26,14 +27,23 @@ java {
             rootProject.projectDir.resolve("../external/logback-android/logback-core/src/main/java")
         java.srcDirs(srcDir)
 
+        // Remove or rename module-info.java before compilation to avoid module errors
         val modInfo = srcDir.resolve("module-info.java")
         if (modInfo.exists() && modInfo.isFile) {
-            modInfo.renameTo(srcDir.resolve("module-info.java.exclude"))
+            // Try to delete first, fallback to rename if delete fails
+            if (!modInfo.delete()) {
+                modInfo.renameTo(srcDir.resolve("module-info.java.exclude"))
+            }
         }
     }
 
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
+}
+
+tasks.withType<JavaCompile> {
+    // Ensure module-info.java is not compiled even if present
+    exclude("module-info.java")
 }
 
 //noinspection UseTomlInstead GradleDynamicVersion
@@ -47,3 +57,4 @@ dependencies {
     testCompileOnly("org.eclipse.angus:angus-mail:+")
     testCompileOnly("org.mockito:mockito-core:+")
 }
+

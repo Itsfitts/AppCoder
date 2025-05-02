@@ -73,13 +73,13 @@ public final class TermuxInstaller {
         // account has the expected file system paths. Verify that:
         if (!PackageUtils.isCurrentUserThePrimaryUser(activity)) {
             bootstrapErrorMessage = activity.getString(R.string.bootstrap_error_not_primary_user_message,
-                MarkdownUtils.getMarkdownCodeForString(TERMUX_PREFIX_DIR_PATH, false));
+                    MarkdownUtils.getMarkdownCodeForString(TERMUX_PREFIX_DIR_PATH, false));
             Logger.logError(LOG_TAG, "isFilesDirectoryAccessible: " + isFilesDirectoryAccessible);
             Logger.logError(LOG_TAG, bootstrapErrorMessage);
             sendBootstrapCrashReportNotification(activity, bootstrapErrorMessage);
             MessageDialogUtils.exitAppWithErrorMessage(activity,
-                activity.getString(R.string.bootstrap_error_title),
-                bootstrapErrorMessage);
+                    activity.getString(R.string.bootstrap_error_title),
+                    bootstrapErrorMessage);
             return;
         }
 
@@ -87,16 +87,16 @@ public final class TermuxInstaller {
             bootstrapErrorMessage = Error.getMinimalErrorString(filesDirectoryAccessibleError);
             //noinspection SdCardPath
             if (PackageUtils.isAppInstalledOnExternalStorage(activity) &&
-                !TermuxConstants.TERMUX_FILES_DIR_PATH.equals(activity.getFilesDir().getAbsolutePath().replaceAll("^/data/user/0/", "/data/data/"))) {
+                    !TermuxConstants.TERMUX_FILES_DIR_PATH.equals(activity.getFilesDir().getAbsolutePath().replaceAll("^/data/user/0/", "/data/data/"))) {
                 bootstrapErrorMessage += "\n\n" + activity.getString(R.string.bootstrap_error_installed_on_portable_sd,
-                    MarkdownUtils.getMarkdownCodeForString(TERMUX_PREFIX_DIR_PATH, false));
+                        MarkdownUtils.getMarkdownCodeForString(TERMUX_PREFIX_DIR_PATH, false));
             }
 
             Logger.logError(LOG_TAG, bootstrapErrorMessage);
             sendBootstrapCrashReportNotification(activity, bootstrapErrorMessage);
             MessageDialogUtils.showMessage(activity,
-                activity.getString(R.string.bootstrap_error_title),
-                bootstrapErrorMessage, null);
+                    activity.getString(R.string.bootstrap_error_title),
+                    bootstrapErrorMessage, null);
             return;
         }
 
@@ -141,12 +141,21 @@ public final class TermuxInstaller {
                         return;
                     }
 
+
+                    // ============================================================
+                    // ===vvv THIS BLOCK IS NOW COMMENTED OUT vvv===
+                    /*
                     // Create prefix directory if it does not already exist and set required permissions
+                    // REASON: This creates an empty /files/usr directory prematurely,
+                    // causing the later renameTo operation to fail.
                     error = TermuxFileUtils.isTermuxPrefixDirectoryAccessible(true, true);
                     if (error != null) {
                         showBootstrapErrorDialog(activity, whenDone, Error.getErrorMarkdownString(error));
                         return;
                     }
+                    */
+                    // ============================================================
+
 
                     Logger.logInfo(LOG_TAG, "Extracting bootstrap zip to prefix staging directory \"" + TERMUX_STAGING_PREFIX_DIR_PATH + "\".");
 
@@ -191,15 +200,26 @@ public final class TermuxInstaller {
                                         while ((readBytes = zipInput.read(buffer)) != -1)
                                             outStream.write(buffer, 0, readBytes);
                                     }
+                                    // Set executable permissions for files in bin/ and libexec/ etc.
+                                    // We need https://github.com/termux/termux-app/issues/151 Permissions should be kept in zip file
                                     if (zipEntryName.startsWith("bin/") || zipEntryName.startsWith("libexec") ||
-                                        zipEntryName.startsWith("lib/apt/apt-helper") || zipEntryName.startsWith("lib/apt/methods")) {
+                                            zipEntryName.startsWith("lib/apt/apt-helper") || zipEntryName.startsWith("lib/apt/methods")) {
                                         //noinspection OctalInteger
-                                        Os.chmod(targetFile.getAbsolutePath(), 0700);
+                                        try {
+                                            Os.chmod(targetFile.getAbsolutePath(), 0700);
+                                        } catch (Exception e) {
+                                            // If fails, show error and exit, unless it was lib/apt/methods/http that failed
+                                            // which fails on Android 6.0, see https://github.com/termux/termux-app/issues/631.
+                                            // We work around this by duplicating the http method with https below.
+                                            if (!zipEntryName.equals("lib/apt/methods/http")) {
+                                                throw new RuntimeException("Os.chmod(\"" + targetFile.getAbsolutePath() + "\", 0700) failed", e);
+                                            }
+                                        }
                                     }
                                 }
                             }
-                        }
-                    }
+                        } // End of while loop for zip entries
+                    } // End of try-with-resources for ZipInputStream
 
                     if (symlinks.isEmpty())
                         throw new RuntimeException("No SYMLINKS.txt encountered");
@@ -207,11 +227,23 @@ public final class TermuxInstaller {
                         Os.symlink(symlink.first, symlink.second);
                     }
 
+
                     Logger.logInfo(LOG_TAG, "Moving termux prefix staging to prefix directory.");
 
+                    // ===vvv RENAMETO HANDLING WITH IMPROVED LOGGING vvv===
                     if (!TERMUX_STAGING_PREFIX_DIR.renameTo(TERMUX_PREFIX_DIR)) {
-                        throw new RuntimeException("Moving termux prefix staging to prefix directory failed");
+                        // Add more specific logging here
+                        String renameErrorMsg = "Moving termux prefix staging directory \"" + TERMUX_STAGING_PREFIX_DIR_PATH +
+                                "\" to prefix directory \"" + TERMUX_PREFIX_DIR_PATH + "\" failed." +
+                                "\nStaging exists: " + TERMUX_STAGING_PREFIX_DIR.exists() +
+                                "\nPrefix exists before rename attempt: " + TERMUX_PREFIX_DIR.exists() +
+                                "\nPrefix isDirectory: " + (TERMUX_PREFIX_DIR.exists() ? TERMUX_PREFIX_DIR.isDirectory() : "N/A");
+                        Logger.logError(LOG_TAG, renameErrorMsg);
+                        // Throwing the exception here should lead to showBootstrapErrorDialog getting called
+                        throw new RuntimeException(renameErrorMsg);
                     }
+                    // ===^^^ END RENAME HANDLING MODIFICATION ^^^===
+
 
                     Logger.logInfo(LOG_TAG, "Bootstrap packages installed successfully.");
 
@@ -222,7 +254,6 @@ public final class TermuxInstaller {
 
                 } catch (final Exception e) {
                     showBootstrapErrorDialog(activity, whenDone, Logger.getStackTracesMarkdownString(null, Logger.getStackTracesStringArray(e)));
-
                 } finally {
                     activity.runOnUiThread(() -> {
                         try {
@@ -245,15 +276,15 @@ public final class TermuxInstaller {
         activity.runOnUiThread(() -> {
             try {
                 new AlertDialog.Builder(activity).setTitle(R.string.bootstrap_error_title).setMessage(R.string.bootstrap_error_body)
-                    .setNegativeButton(R.string.bootstrap_error_abort, (dialog, which) -> {
-                        dialog.dismiss();
-                        activity.finish();
-                    })
-                    .setPositiveButton(R.string.bootstrap_error_try_again, (dialog, which) -> {
-                        dialog.dismiss();
-                        FileUtils.deleteFile("termux prefix directory", TERMUX_PREFIX_DIR_PATH, true);
-                        TermuxInstaller.setupBootstrapIfNeeded(activity, whenDone);
-                    }).show();
+                        .setNegativeButton(R.string.bootstrap_error_abort, (dialog, which) -> {
+                            dialog.dismiss();
+                            activity.finish();
+                        })
+                        .setPositiveButton(R.string.bootstrap_error_try_again, (dialog, which) -> {
+                            dialog.dismiss();
+                            FileUtils.deleteFile("termux prefix directory", TERMUX_PREFIX_DIR_PATH, true);
+                            TermuxInstaller.setupBootstrapIfNeeded(activity, whenDone);
+                        }).show();
             } catch (WindowManager.BadTokenException e1) {
                 // Activity already dismissed - ignore.
             }
@@ -266,9 +297,9 @@ public final class TermuxInstaller {
         // Add info of all install Termux plugin apps as well since their target sdk or installation
         // on external/portable sd card can affect Termux app files directory access or exec.
         TermuxCrashUtils.sendCrashReportNotification(activity, LOG_TAG,
-            title, null, "## " + title + "\n\n" + message + "\n\n" +
-                TermuxUtils.getTermuxDebugMarkdownString(activity),
-            true, false, TermuxUtils.AppInfoMode.TERMUX_AND_PLUGIN_PACKAGES, true);
+                title, null, "## " + title + "\n\n" + message + "\n\n" +
+                        TermuxUtils.getTermuxDebugMarkdownString(activity),
+                true, false, TermuxUtils.AppInfoMode.TERMUX_AND_PLUGIN_PACKAGES, true);
     }
 
     static void setupStorageSymlinks(final Context context) {
@@ -288,8 +319,8 @@ public final class TermuxInstaller {
                         Logger.logErrorAndShowToast(context, LOG_TAG, error.getMessage());
                         Logger.logErrorExtended(LOG_TAG, "Setup Storage Error\n" + error.toString());
                         TermuxCrashUtils.sendCrashReportNotification(context, LOG_TAG, title, null,
-                            "## " + title + "\n\n" + Error.getErrorMarkdownString(error),
-                            true, false, TermuxUtils.AppInfoMode.TERMUX_PACKAGE, true);
+                                "## " + title + "\n\n" + Error.getErrorMarkdownString(error),
+                                true, false, TermuxUtils.AppInfoMode.TERMUX_PACKAGE, true);
                         return;
                     }
 
@@ -361,14 +392,16 @@ public final class TermuxInstaller {
                     Logger.logErrorAndShowToast(context, LOG_TAG, e.getMessage());
                     Logger.logStackTraceWithMessage(LOG_TAG, "Setup Storage Error: Error setting up link", e);
                     TermuxCrashUtils.sendCrashReportNotification(context, LOG_TAG, title, null,
-                        "## " + title + "\n\n" + Logger.getStackTracesMarkdownString(null, Logger.getStackTracesStringArray(e)),
-                        true, false, TermuxUtils.AppInfoMode.TERMUX_PACKAGE, true);
+                            "## " + title + "\n\n" + Logger.getStackTracesMarkdownString(null, Logger.getStackTracesStringArray(e)),
+                            true, false, TermuxUtils.AppInfoMode.TERMUX_PACKAGE, true);
                 }
             }
         }.start();
     }
 
     private static Error ensureDirectoryExists(File directory) {
+        // This helper is used internally by the installer thread.
+        // It seems fine as is, just needs to ensure parent directories exist for extraction.
         return FileUtils.createDirectoryFile(directory.getAbsolutePath());
     }
 

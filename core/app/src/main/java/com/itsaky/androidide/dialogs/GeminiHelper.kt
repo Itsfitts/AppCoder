@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit
 class GeminiHelper(
     private val apiKeyProvider: () -> String, // Function to securely get the API key
     private val errorHandler: (String) -> Unit,
-    private val uiCallback: (block: () -> Unit) -> Unit // Changed: Takes a block to run on UI thread
+    private val uiCallback: (block: () -> Unit) -> Unit
 ) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(120, TimeUnit.SECONDS)
@@ -24,12 +24,17 @@ class GeminiHelper(
         .build()
 
     fun sendGeminiRequest(contents: List<JSONObject>, callback: (JSONObject) -> Unit) {
+        // --- Use the provider function ---
         val apiKey = apiKeyProvider()
-        if (apiKey.isBlank() || apiKey == "YOUR_API_KEY") {
-            errorHandler("Gemini API Key is not set or is the placeholder key.")
+
+        // --- Check ONLY if it's blank ---
+        if (apiKey.isBlank()) {
+            errorHandler("Gemini API Key is not set.") // Provide specific error
             return
         }
+        // --- No comparison to a specific key here ---
 
+        // --- The rest of the function remains the same ---
         val requestJson = JSONObject().apply {
             put("contents", JSONArray(contents))
             put("generationConfig", JSONObject().apply {
@@ -47,6 +52,7 @@ class GeminiHelper(
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val requestBody = requestJson.toString().toRequestBody(mediaType)
 
+        // Use the apiKey variable fetched from the provider
         val request = Request.Builder()
             .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=$apiKey")
             .post(requestBody)
@@ -81,13 +87,11 @@ class GeminiHelper(
                             if (!textExists) {
                                 errorHandler("API Error: Empty response received. Finish Reason: $finishReason.")
                             } else {
-                                // Pass a lambda that captures the jsonResponse and calls the original callback
-                                uiCallback { callback(jsonResponse) } // Changed: Pass a block to uiCallback
+                                uiCallback { callback(jsonResponse) }
                             }
                         }
                     } else {
-                        // Pass a lambda that captures the jsonResponse and calls the original callback
-                        uiCallback { callback(jsonResponse) } // Changed: Pass a block to uiCallback
+                        uiCallback { callback(jsonResponse) }
                     }
                 } catch (e: Exception) {
                     errorHandler("Error processing API response: ${e.message}. Response Body: $responseBody")
@@ -98,6 +102,7 @@ class GeminiHelper(
         })
     }
 
+    // --- extractTextFromGeminiResponse, extractJsonArrayFromText, parseFileChanges remain the same ---
     fun extractTextFromGeminiResponse(response: JSONObject): String {
         try {
             val candidates = response.optJSONArray("candidates")
@@ -124,7 +129,7 @@ class GeminiHelper(
         }
     }
 
-     fun extractJsonArrayFromText(text: String): String {
+    fun extractJsonArrayFromText(text: String): String {
         val startIndex = text.indexOf('[')
         val endIndex = text.lastIndexOf(']')
         if (startIndex != -1 && endIndex != -1 && endIndex > startIndex) {
@@ -153,16 +158,17 @@ class GeminiHelper(
             }
         }
         if (matches.count() == 0 && text.contains("```")) {
-             logAppender("⚠️ AI response contained code blocks but couldn't parse valid FILE: markers.\n")
+            logAppender("⚠️ AI response contained code blocks but couldn't parse valid FILE: markers.\n")
         } else if (matches.count() == 0 && !text.isBlank()) {
-             logAppender("⚠️ AI response did not contain recognizable file modification blocks.\nResponse:\n$text\n")
+            logAppender("⚠️ AI response did not contain recognizable file modification blocks.\nResponse:\n$text\n")
         }
         return result
     }
 }
 
-// Simple Conversation class (can be nested or separate)
+// --- GeminiConversation remains the same ---
 class GeminiConversation {
+    // ... (keep existing implementation)
     private val messages = mutableListOf<JSONObject>()
 
     fun addUserMessage(content: String) {

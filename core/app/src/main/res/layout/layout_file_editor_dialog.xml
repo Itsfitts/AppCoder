@@ -43,15 +43,33 @@
                 android:inputType="textMultiLine"
                 android:minLines="5"
                 android:gravity="top|start"
-                android:imeOptions="actionDone" />
+                android:imeOptions="actionNext" /> <!-- Changed imeOption -->
         </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- ****** START: ADDED API KEY FIELD ****** -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/api_key_layout"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Gemini API Key"
+            android:layout_marginBottom="8dp">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/api_key_input"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textPassword"
+            android:imeOptions="actionDone" />
+        </com.google.android.material.textfield.TextInputLayout>
+        <!-- ****** END: ADDED API KEY FIELD ****** -->
 
         <!-- Generate Button (Now triggers the full workflow) -->
         <Button
             android:id="@+id/generate_app_button"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Generate &amp; Modify App"
+            android:text="Generate and Modify App"
             android:layout_marginBottom="8dp"/>
 
         <!-- Loading Indicator -->
@@ -91,7 +109,8 @@
                 android:gravity="top|start"
                 android:focusable="false"
                 android:clickable="false"
-                android:scrollbars="vertical"/>
+                android:focusableInTouchMode="false"
+            android:scrollbars="vertical"/>
         </com.google.android.material.textfield.TextInputLayout>
 
         <!-- Action Buttons (Initially hidden) -->

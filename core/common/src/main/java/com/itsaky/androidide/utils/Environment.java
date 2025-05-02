@@ -88,15 +88,46 @@ public final class Environment {
     BASH_SHELL = new File(BIN_DIR, "bash");
     LOGIN_SHELL = new File(BIN_DIR, "login");
 
-    setExecutable(JAVA);
-    setExecutable(BASH_SHELL);
+    //setExecutable(JAVA);
+    //setExecutable(BASH_SHELL);
 
     System.setProperty("user.home", HOME.getAbsolutePath());
   }
 
   public static File mkdirIfNotExits(File in) {
-    if (in != null && !in.exists()) {
-      FileUtils.createOrExistsDir(in);
+    if (in != null) {
+        if (in.exists()) {
+            // Check if it exists but is a file, which is the error condition
+            if (in.isFile()) {
+                LOG.warn("Path exists but is a file, deleting: {}", in.getAbsolutePath());
+                if (!in.delete()) {
+                    LOG.error("Failed to delete conflicting file: {}", in.getAbsolutePath());
+                    // Return the problematic file path, further operations will likely fail
+                    return in;
+                }
+                // Now try to create the directory
+                if (!in.mkdirs()) {
+                    LOG.error("Failed to create directory after deleting conflicting file: {}", in.getAbsolutePath());
+                } else {
+                     LOG.info("Successfully created directory after deleting conflicting file: {}", in.getAbsolutePath());
+                }
+            } else {
+                 // It exists and is already a directory, do nothing.
+                 LOG.debug("Directory already exists: {}", in.getAbsolutePath());
+            }
+        } else {
+            // Path does not exist, create it using mkdirs() for robustness
+            if (!in.mkdirs()) {
+                LOG.error("Failed to create directory: {}", in.getAbsolutePath());
+            } else {
+                 LOG.info("Successfully created directory: {}", in.getAbsolutePath());
+            }
+        }
+    }
+
+    // Optional final check for debugging
+    if (in != null && !in.isDirectory()) {
+         LOG.error("FATAL: Path is not a directory after mkdirIfNotExits: {}", in.getAbsolutePath());
     }
 
     return in;

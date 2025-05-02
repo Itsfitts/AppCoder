@@ -1,10 +1,11 @@
 package com.itsaky.androidide.dialogs
 
 import android.app.Dialog
-import android.app.PendingIntent
-import android.content.Intent
-import android.content.IntentSender
-import android.content.pm.PackageInstaller.SessionCallback
+// import android.app.PendingIntent // Not used directly here anymore
+// import android.content.Intent // Not used directly here anymore
+// import android.content.IntentSender // Not used directly here anymore
+import android.content.Context // Added for SharedPreferences
+import android.content.SharedPreferences // Added
 import android.os.Bundle
 import android.text.method.ScrollingMovementMethod
 import android.util.Log
@@ -18,17 +19,17 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.os.bundleOf
 import androidx.fragment.app.DialogFragment
-import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputEditText // Ensure this is imported
 import com.itsaky.androidide.R
 import com.itsaky.androidide.activities.MainActivity
-import com.itsaky.androidide.activities.editor.BaseEditorActivity
-import com.itsaky.androidide.app.BaseApplication
+// import com.itsaky.androidide.activities.editor.BaseEditorActivity // Might not be needed if install logic is removed
+// import com.itsaky.androidide.app.BaseApplication // Unused import
 import com.itsaky.androidide.lookup.Lookup
 import com.itsaky.androidide.models.NewProjectDetails
 import com.itsaky.androidide.projects.builder.BuildService
-import com.itsaky.androidide.services.ToolingServerNotStartedException
+// import com.itsaky.androidide.services.ToolingServerNotStartedException // Likely unused now
 import com.itsaky.androidide.services.builder.GradleBuildService
-import com.itsaky.androidide.services.builder.gradleDistributionParams
+// import com.itsaky.androidide.services.builder.gradleDistributionParams // Likely unused now
 import com.itsaky.androidide.templates.BooleanParameter
 import com.itsaky.androidide.templates.EnumParameter
 import com.itsaky.androidide.templates.Language
@@ -36,26 +37,25 @@ import com.itsaky.androidide.templates.ProjectTemplateRecipeResult
 import com.itsaky.androidide.templates.Sdk
 import com.itsaky.androidide.templates.StringParameter
 import com.itsaky.androidide.templates.impl.basicActivity.basicActivityProject
-import com.itsaky.androidide.tooling.api.messages.InitializeProjectParams
-import com.itsaky.androidide.tooling.api.messages.TaskExecutionMessage
-import com.itsaky.androidide.tooling.api.messages.result.BuildInfo
-import com.itsaky.androidide.tooling.api.messages.result.InitializeResult
-import com.itsaky.androidide.tooling.api.messages.result.TaskExecutionResult
-import com.itsaky.androidide.tooling.events.ProgressEvent
-import com.itsaky.androidide.utils.ApkInstaller
-import com.itsaky.androidide.utils.ILogger
+// import com.itsaky.androidide.tooling.api.messages.InitializeProjectParams // Likely unused now
+// import com.itsaky.androidide.tooling.api.messages.TaskExecutionMessage // Likely unused now
+// import com.itsaky.androidide.tooling.api.messages.result.BuildInfo // Likely unused now
+// import com.itsaky.androidide.tooling.api.messages.result.InitializeResult // Likely unused now
+// import com.itsaky.androidide.tooling.api.messages.result.TaskExecutionResult // Likely unused now
+// import com.itsaky.androidide.tooling.events.ProgressEvent // Likely unused now
+// import com.itsaky.androidide.utils.ApkInstaller // Likely unused now
+// import com.itsaky.androidide.utils.ILogger // Unused import
 import com.itsaky.androidide.utils.TemplateRecipeExecutor
-// Removed OkHttp/JSON imports - handled by GeminiHelper
-import org.json.JSONArray
-import org.json.JSONObject
+import org.json.JSONArray // Keep for processing selection response
+import org.json.JSONObject // Keep for helper interaction
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.FileReader
 import java.io.IOException
 import java.util.*
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.CompletionException
-import java.util.concurrent.TimeUnit
+// import java.util.concurrent.CompletableFuture // Likely unused now
+// import java.util.concurrent.CompletionException // Likely unused now
+// import java.util.concurrent.TimeUnit // Unused import
 import kotlin.concurrent.thread
 
 class FileEditorDialog : DialogFragment() {
@@ -68,33 +68,31 @@ class FileEditorDialog : DialogFragment() {
     private lateinit var logOutput: TextInputEditText
     private lateinit var loadingIndicator: ProgressBar
     private lateinit var actionButtonsLayout: LinearLayout
-    // Renamed installButton to continueButton
     private lateinit var continueButton: Button
     private lateinit var modifyFurtherButton: Button
     private lateinit var projectsBaseDir: File
     private var currentProjectDir: File? = null
 
+    // --- *** ADDED API Key Input Reference *** ---
+    private lateinit var apiKeyInput: TextInputEditText
+
     // --- LLM Specific Properties ---
-    // Use GeminiHelper instance
-    private val geminiHelper: GeminiHelper by lazy {
-        GeminiHelper(
-            apiKeyProvider = ::getApiKeyFromSecureSource, // Pass function reference
-            errorHandler = ::handleError,
-            uiCallback = { block -> activity?.runOnUiThread(block) } // Changed: Pass the block directly to runOnUiThread
-        )
-    }
-    private val conversation = GeminiConversation() // Use standalone conversation class
+    private lateinit var geminiHelper: GeminiHelper // Changed to lateinit
+    private val conversation = GeminiConversation()
     private val selectedFilesForModification = mutableListOf<String>()
-    // --- End LLM Properties ---
+
+    // --- *** ADDED SharedPreferences *** ---
+    private lateinit var prefs: SharedPreferences
 
     // State Management
     internal enum class WorkflowState {
-        IDLE, CREATING_PROJECT, CONFIGURING_PROJECT, SELECTING_FILES,
-        GENERATING_CODE, READY_FOR_ACTION, INSTALLING, ERROR // INSTALLING state might become unused
+        IDLE, CREATING_PROJECT, SELECTING_FILES,
+        GENERATING_CODE, READY_FOR_ACTION, ERROR
+        // Removed CONFIGURING_PROJECT, INSTALLING as they are deferred
     }
     internal var currentState = WorkflowState.IDLE
 
-    // Build Service instance (still needed for potential future use or if other parts rely on it)
+    // Build Service instance (kept for potential future use)
     internal val buildService: GradleBuildService? by lazy {
         Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE) as? GradleBuildService
     }
@@ -109,10 +107,22 @@ class FileEditorDialog : DialogFragment() {
         }
         projectsBaseDir = File(basePath)
         if (!projectsBaseDir.isDirectory) {
-             Log.e(TAG, "Projects base directory does not exist or is not a directory: $basePath")
-             Toast.makeText(requireContext(), "Error: Invalid projects base directory.", Toast.LENGTH_LONG).show()
-             dismiss(); return
+            Log.e(TAG, "Projects base directory does not exist or is not a directory: $basePath")
+            Toast.makeText(requireContext(), "Error: Invalid projects base directory.", Toast.LENGTH_LONG).show()
+            dismiss(); return
         }
+
+        // --- *** INITIALIZE SharedPreferences *** ---
+        prefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+        // --- *** INITIALIZE GeminiHelper *** ---
+        // Moved initialization here because it needs apiKeyInput which is setup later
+        // But apiKeyProvider lambda reads it at call time, so this is okay
+        geminiHelper = GeminiHelper(
+            apiKeyProvider = { apiKeyInput.text.toString().trim() }, // Reads from input field
+            errorHandler = ::handleError,
+            uiCallback = { block -> activity?.runOnUiThread(block) }
+        )
     }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
@@ -122,41 +132,45 @@ class FileEditorDialog : DialogFragment() {
 
         appNameInput = view.findViewById(R.id.app_name_input)
         appDescriptionInput = view.findViewById(R.id.app_description_input)
+        // --- *** Get Reference to API Key Input *** ---
+        apiKeyInput = view.findViewById(R.id.api_key_input)
         generateButton = view.findViewById(R.id.generate_app_button)
         statusText = view.findViewById(R.id.status_text)
         logOutput = view.findViewById(R.id.log_output)
         loadingIndicator = view.findViewById(R.id.loading_indicator)
         actionButtonsLayout = view.findViewById(R.id.action_buttons_layout)
-        // Update findViewById to use the new ID
         continueButton = view.findViewById(R.id.continue_button)
         modifyFurtherButton = view.findViewById(R.id.modify_further_button)
 
-        logOutput.isEnabled = false
-        logOutput.movementMethod = ScrollingMovementMethod()
+        logOutput.isEnabled = false // Keep it non-editable by user
+        logOutput.movementMethod = ScrollingMovementMethod() // Allow internal scrolling if needed
+
+        // --- *** Load Saved API Key *** ---
+        loadApiKey()
 
         generateButton.setOnClickListener {
             if (currentState == WorkflowState.IDLE || currentState == WorkflowState.ERROR || currentState == WorkflowState.READY_FOR_ACTION) {
+                // --- *** Save API Key Before Starting *** ---
+                saveApiKey()
                 startProjectGenerationWorkflow()
             }
         }
 
-        // Modify the click listener for the continueButton
         continueButton.setOnClickListener {
             if (currentState == WorkflowState.READY_FOR_ACTION && currentProjectDir != null) {
-                // Get MainActivity instance and open the project
                 val mainActivity = activity as? MainActivity
                 if (mainActivity != null) {
                     appendToLog("Opening project in editor...\n")
-                    mainActivity.openProject(currentProjectDir!!) // Call MainActivity's openProject
-                    dismiss() // Close the dialog
+                    mainActivity.openProject(currentProjectDir!!)
+                    dismiss()
                 } else {
                     handleError("Could not get MainActivity reference to open project.")
                 }
             } else {
-                 appendToLog("Project not ready or directory not set. Cannot continue.\n")
+                appendToLog("Project not ready or directory not set. Cannot continue.\n")
             }
         }
-        modifyFurtherButton.setOnClickListener { dismiss() } // Keep this as is
+        modifyFurtherButton.setOnClickListener { dismiss() }
 
         builder.setView(view)
             .setTitle("AI App Generator")
@@ -166,14 +180,43 @@ class FileEditorDialog : DialogFragment() {
         return builder.create()
     }
 
+    // --- *** ADDED loadApiKey Function *** ---
+    private fun loadApiKey() {
+        val savedKey = prefs.getString(KEY_API_KEY, "") ?: ""
+        apiKeyInput.setText(savedKey)
+        Log.d(TAG, "Loaded API Key from Prefs (length: ${savedKey.length})")
+    }
+
+    // --- *** ADDED saveApiKey Function *** ---
+    private fun saveApiKey() {
+        val currentKey = apiKeyInput.text.toString().trim()
+        prefs.edit().putString(KEY_API_KEY, currentKey).apply()
+        Log.d(TAG, "Saved API Key to Prefs (length: ${currentKey.length})")
+    }
+
+
     // --- Workflow Orchestration ---
     private fun startProjectGenerationWorkflow() {
         val appName = appNameInput.text.toString().trim()
         val appDescription = appDescriptionInput.text.toString().trim()
+        // --- *** ADDED API Key Check *** ---
+        val apiKey = apiKeyInput.text.toString().trim() // Read from input
+        if (apiKey.isBlank()) { // Check if the input field is blank
+            handleError("Gemini API Key cannot be empty.") // Use handleError
+            // Optionally set error on the input field
+            activity?.runOnUiThread { apiKeyInput.error = "API Key required" }
+            return
+        }
+        // --- *** END API Key Check *** ---
+
         if (appName.isEmpty()) { appNameInput.error = "App name is required"; return }
         if (appDescription.isEmpty()) { appDescriptionInput.error = "App description is required"; return }
         currentProjectDir = File(projectsBaseDir, appName)
         if (currentProjectDir!!.exists()) { appNameInput.error = "Project directory already exists"; return }
+        // Clear errors if checks pass
+        appNameInput.error = null
+        appDescriptionInput.error = null
+        apiKeyInput.error = null // Clear API key error too
 
         logOutput.text?.clear()
         conversation.clear()
@@ -185,8 +228,6 @@ class FileEditorDialog : DialogFragment() {
             try {
                 val createdProjectDir = createProjectFromTemplate(appName)
                 currentProjectDir = createdProjectDir
-                // Removed automatic configuration start
-                // appendToLog("Step 2: Project created. Configuration (Gradle Sync) will start when 'Install' is pressed.\n")
                 appendToLog("Step 2: Project created. Proceeding to AI modification...\n")
                 startFileSelectionForModification(appName, appDescription, createdProjectDir)
             } catch (e: Exception) {
@@ -196,7 +237,7 @@ class FileEditorDialog : DialogFragment() {
         }
     }
 
-    // --- Step 1: Create Project ---
+    // --- Step 1: Create Project --- (Keep as is)
     private fun createProjectFromTemplate(appName: String): File {
         val packageName = createPackageName(appName)
         val projectDir = File(projectsBaseDir, appName)
@@ -219,94 +260,11 @@ class FileEditorDialog : DialogFragment() {
     }
 
     // --- Step 2 & 4: Configuration and Installation Workflow (REMOVED/COMMENTED OUT) ---
-    // These methods are no longer triggered by the 'Continue' button.
-    // They might be needed if you add separate build/install functionality later.
-    /*
-    internal fun startConfigurationAndInstallationWorkflow(projectDir: File) {
-        val service = buildService
-        if (service == null) { handleError("Build Service is not available."); return }
-        if (!service.isToolingServerStarted()) { handleError("Tooling server is not running."); return }
-        setState(WorkflowState.CONFIGURING_PROJECT)
-        appendToLog("Step 4: Starting project configuration (Gradle Sync)...\nThis might take several minutes...\n")
-        val params = InitializeProjectParams(projectDir.absolutePath, gradleDistributionParams)
-        service.initializeProject(params).whenCompleteAsync { result, error ->
-            activity?.runOnUiThread {
-                if (error != null) { handleError("Configuration failed: ${error.message ?: "Unknown error"}") }
-                else if (result != null && result.isSuccessful) {
-                    appendToLog("✅ Project configuration complete.\n")
-                    configurationSuccessful(projectDir)
-                } else { handleError("Configuration failed. Reason: ${result?.failure?.name ?: "Unknown error"}") }
-            }
-        }
-    }
+    // (Keep commented out as before)
 
-    internal fun configurationSuccessful(projectDir: File) {
-        if (currentState == WorkflowState.CONFIGURING_PROJECT) { startInstallation(projectDir) }
-        else { Log.w(TAG, "Configuration finished but state was not CONFIGURING_PROJECT ($currentState). Ignoring.") }
-    }
-
-    internal fun startInstallation(projectDir: File) {
-        val service = buildService
-        if (service == null) { handleError("Build Service is not available."); return }
-        if (!service.isToolingServerStarted()) { handleError("Tooling server is not running."); return }
-        setState(WorkflowState.INSTALLING)
-        appendToLog("Step 5: Starting build and installation process (assembleDebug)...\n")
-        val taskName = "assembleDebug" // Define the task name as a String
-        // val taskMessage = TaskExecutionMessage(tasks) // Removed
-        val buildListener = object : GradleBuildService.EventListener {
-            override fun prepareBuild(buildInfo: BuildInfo) {}
-            override fun onBuildSuccessful(executedTasks: List<String?>) {
-                activity?.runOnUiThread {
-                    appendToLog("✅ Build successful ($executedTasks).\n")
-                    findAndInstallApk(projectDir)
-                }
-            }
-            override fun onBuildFailed(executedTasks: List<String?>) { activity?.runOnUiThread { handleError("Build failed for tasks: $executedTasks") } }
-            override fun onOutput(line: String?) { if (line != null) { appendToLog(line + "\n") } }
-            override fun onProgressEvent(event: ProgressEvent) {}
-        }
-        service.setEventListener(buildListener)
-        // Pass the task name string directly
-        service.executeTasks(projectDir.absolutePath, taskName).whenCompleteAsync { result, error -> // Changed: Pass taskName (String)
-            activity?.runOnUiThread {
-                service.setEventListener(null) // Unset listener
-                if (error != null) {
-                    if (error !is CompletionException || error.cause !is ToolingServerNotStartedException) {
-                         handleError("Error executing build task: ${error.message ?: "Unknown error"}")
-                    }
-                } else if (result != null && !result.isSuccessful) {
-                    handleError("Task execution reported failure. Type: ${result.failure?.name}")
-                }
-            }
-        }
-    }
-
-    internal fun findAndInstallApk(projectDir: File) {
-        val apkName = "${projectDir.name}-debug.apk"
-        val apkPath = "app/build/outputs/apk/debug/$apkName"
-        val apkFile = File(projectDir, apkPath)
-        if (!apkFile.exists()) {
-            handleError("Build successful, but APK not found at: ${apkFile.absolutePath}")
-            setState(WorkflowState.ERROR); return
-        }
-        appendToLog("Found APK: ${apkFile.absolutePath}\nStarting installation...\n")
-        val installCallback = (activity as? BaseEditorActivity)?.installationSessionCallback()
-        if (installCallback == null) { handleError("Could not get installation callback from activity."); setState(WorkflowState.ERROR); return }
-        val intent = Intent()
-        val pendingIntent = PendingIntent.getBroadcast(requireContext(), 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val sender: IntentSender = pendingIntent.intentSender
-        try {
-            ApkInstaller.installApk(requireContext(), sender, apkFile, installCallback)
-            appendToLog("Installation session initiated...\n")
-        } catch (e: Exception) {
-            handleError("Failed to initiate APK installation: ${e.message}")
-            setState(WorkflowState.ERROR)
-        }
-    }
-    */
-
-    // --- Step 3: LLM Modification ---
+    // --- Step 3: LLM Modification --- (Keep the rest of the methods as they are)
     private fun startFileSelectionForModification(appName: String, appDescription: String, projectDir: File) {
+        // ... (Keep existing implementation)
         setState(WorkflowState.SELECTING_FILES)
         appendToLog("Step 3a: Identifying files to modify based on description...\n")
         val files = ProjectFileUtils.scanProjectFiles(projectDir) // Use helper
@@ -317,9 +275,8 @@ class FileEditorDialog : DialogFragment() {
         }
     }
 
-    // Removed scanProjectFiles, collectFilePaths, isCodeFile - Moved to ProjectFileUtils
-
     private fun sendFileSelectionPrompt(appName: String, appDescription: String, files: List<String>, projectDir: File) {
+        // ... (Keep existing implementation, it uses geminiHelper)
         val fileList = files.joinToString("\n")
         val prompt = """
             I have just created a basic Android app called "$appName". App goal: "$appDescription"
@@ -347,7 +304,8 @@ class FileEditorDialog : DialogFragment() {
         }
     }
 
-     private fun loadSelectedFileContentsAndGenerate(appName: String, appDescription: String, projectDir: File) {
+    private fun loadSelectedFileContentsAndGenerate(appName: String, appDescription: String, projectDir: File) {
+        // ... (Keep existing implementation)
         setState(WorkflowState.GENERATING_CODE)
         appendToLog("Step 3b: Loading selected files and generating code...\n")
         val fileContents = mutableMapOf<String, String>()
@@ -369,7 +327,8 @@ class FileEditorDialog : DialogFragment() {
         sendCodeGenerationPrompt(appName, appDescription, fileContents, missingFiles, projectDir)
     }
 
-     private fun sendCodeGenerationPrompt(appName: String, appDescription: String, fileContents: Map<String, String>, missingFiles: List<String>, projectDir: File) {
+    private fun sendCodeGenerationPrompt(appName: String, appDescription: String, fileContents: Map<String, String>, missingFiles: List<String>, projectDir: File) {
+        // ... (Keep existing implementation, it uses geminiHelper)
         val filesContentText = buildString {
             fileContents.forEach { (path, content) -> append("FILE: $path\n```\n$content\n```\n\n") }
         }
@@ -399,7 +358,8 @@ class FileEditorDialog : DialogFragment() {
         }
     }
 
-    private fun processCodeChanges(responseText: String, projectDir: File) { // Renamed
+    private fun processCodeChanges(responseText: String, projectDir: File) {
+        // ... (Keep existing implementation, it uses geminiHelper and ProjectFileUtils)
         appendToLog("Step 3c: Applying code changes...\n")
         val fileChanges = geminiHelper.parseFileChanges(responseText, ::appendToLog) // Use helper
         if (fileChanges.isEmpty()) {
@@ -409,13 +369,12 @@ class FileEditorDialog : DialogFragment() {
         }
         // Use ProjectFileUtils helper
         ProjectFileUtils.processFileChanges(projectDir, fileChanges, ::appendToLog) { _, _ ->
-             // Completion logic (state update)
-             setState(WorkflowState.READY_FOR_ACTION)
+            // Completion logic (state update)
+            setState(WorkflowState.READY_FOR_ACTION)
         }
     }
-    // Removed processFileChanges - Moved to ProjectFileUtils
 
-    // --- UI State Management ---
+    // --- UI State Management --- (Keep as is)
     internal fun setState(newState: WorkflowState) {
         if (currentState == newState) return
         currentState = newState
@@ -425,36 +384,34 @@ class FileEditorDialog : DialogFragment() {
 
     private fun updateUiForState() {
         // Simplified state updates
-        val isLoading = currentState in listOf(WorkflowState.CREATING_PROJECT, WorkflowState.CONFIGURING_PROJECT, WorkflowState.SELECTING_FILES, WorkflowState.GENERATING_CODE, WorkflowState.INSTALLING)
+        val isLoading = currentState in listOf(WorkflowState.CREATING_PROJECT, WorkflowState.SELECTING_FILES, WorkflowState.GENERATING_CODE)
         loadingIndicator.visibility = if (isLoading) View.VISIBLE else View.GONE
         generateButton.isEnabled = currentState in listOf(WorkflowState.IDLE, WorkflowState.READY_FOR_ACTION, WorkflowState.ERROR)
-        // Show action buttons only when ready
         actionButtonsLayout.visibility = if (currentState == WorkflowState.READY_FOR_ACTION) View.VISIBLE else View.GONE
-        // Update logic for the continueButton
         continueButton.isEnabled = currentState == WorkflowState.READY_FOR_ACTION
-        continueButton.text = getString(R.string.action_continue_to_build) // Set text explicitly
+        continueButton.text = getString(R.string.action_continue_to_build)
         modifyFurtherButton.isEnabled = currentState == WorkflowState.READY_FOR_ACTION
         appNameInput.isEnabled = currentState in listOf(WorkflowState.IDLE, WorkflowState.READY_FOR_ACTION, WorkflowState.ERROR)
         appDescriptionInput.isEnabled = currentState in listOf(WorkflowState.IDLE, WorkflowState.READY_FOR_ACTION, WorkflowState.ERROR)
+        // --- *** ADDED: Enable/disable API key input *** ---
+        apiKeyInput.isEnabled = currentState in listOf(WorkflowState.IDLE, WorkflowState.READY_FOR_ACTION, WorkflowState.ERROR)
 
         statusText.text = when (currentState) {
             WorkflowState.IDLE -> "Ready"
             WorkflowState.CREATING_PROJECT -> "Creating project..."
-            WorkflowState.CONFIGURING_PROJECT -> "Configuring project (Gradle Sync)..." // May become unused
             WorkflowState.SELECTING_FILES -> "AI selecting files..."
             WorkflowState.GENERATING_CODE -> "AI generating code..."
-            WorkflowState.READY_FOR_ACTION -> "Project generated. Ready to open." // Updated text
-            WorkflowState.INSTALLING -> "Building and Installing..." // May become unused
+            WorkflowState.READY_FOR_ACTION -> "Project generated. Ready to open."
             WorkflowState.ERROR -> "Error occurred (see log)"
         }
         generateButton.text = when (currentState) {
-             WorkflowState.READY_FOR_ACTION -> "Regenerate App"
-             WorkflowState.ERROR -> "Retry Generation"
-             else -> "Generate & Modify App"
+            WorkflowState.READY_FOR_ACTION -> "Regenerate App"
+            WorkflowState.ERROR -> "Retry Generation"
+            else -> "Generate & Modify App"
         }
     }
 
-    // --- Logging and Error Handling ---
+    // --- Logging and Error Handling --- (Keep as is)
     internal fun appendToLog(text: String) {
         activity?.runOnUiThread {
             logOutput.append(text)
@@ -476,14 +433,14 @@ class FileEditorDialog : DialogFragment() {
         }
     }
 
-    // --- Helper Functions ---
+    // --- Helper Functions --- (Keep as is)
     private fun createPackageName(appName: String): String {
         val sanitizedName = appName.filter { it.isLetterOrDigit() }.lowercase()
         return "com.example.${sanitizedName.ifEmpty { "myapp" }}"
     }
 
     private fun com.itsaky.androidide.templates.Template<*>.setupParametersFromDetails(details: NewProjectDetails) {
-        // (Content unchanged - kept for brevity)
+        // (Content unchanged)
         val iterator = parameters.iterator()
         try {
             log.debug("Setting template parameter: name = ${details.name}")
@@ -501,32 +458,27 @@ class FileEditorDialog : DialogFragment() {
             val useKtsValue = (langEnum == Language.Kotlin)
             log.debug("Setting template parameter: useKts = $useKtsValue")
             if (iterator.hasNext()) {
-               (iterator.next() as? BooleanParameter)?.setValue(useKtsValue)
+                (iterator.next() as? BooleanParameter)?.setValue(useKtsValue)
             } else { log.warn("Template does not seem to have a 6th (useKts) parameter.") }
         } catch (e: NoSuchElementException) {
-             log.error("Error setting template parameters: Not enough parameters in the template.", e)
-             handleError("Internal error: Template parameter mismatch.")
+            log.error("Error setting template parameters: Not enough parameters in the template.", e)
+            handleError("Internal error: Template parameter mismatch.")
         } catch (e: Exception) {
             log.error("Error setting template parameters", e)
             handleError("Internal error setting template parameters: ${e.message}")
         }
     }
 
-    // --- Gemini API Communication ---
-    // Removed sendGeminiRequest, extractTextFromGeminiResponse, parseFileChanges, extractJsonArrayFromText - Moved to GeminiHelper
-    // Removed GeminiConversation inner class - Moved to separate class
-
-    // Example placeholder function - replace with your actual implementation
-    private fun getApiKeyFromSecureSource(): String {
-        // TODO: Implement secure loading (e.g., from BuildConfig, local.properties, etc.)
-        // Fallback placeholder - REMOVE THIS IN PRODUCTION
-        return "API_KEY_HERE" // Replace with actual secure loading
-    }
+    // --- REMOVED placeholder getApiKeyFromSecureSource ---
 
     // --- Companion Object ---
     companion object {
         const val TAG = "FileEditorDialog"
         private const val ARG_PROJECTS_BASE_DIR = "projects_base_dir"
+        // --- *** ADDED SharedPreferences Constants *** ---
+        private const val PREFS_NAME = "GeminiPrefs"
+        private const val KEY_API_KEY = "gemini_api_key"
+
         fun newInstance(projectsBaseDir: String): FileEditorDialog {
             return FileEditorDialog().apply { arguments = bundleOf(ARG_PROJECTS_BASE_DIR to projectsBaseDir) }
         }

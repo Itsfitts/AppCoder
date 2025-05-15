@@ -24,7 +24,7 @@ When you're ready to take your app further, you can export the code and continue
 ## Setting up the Free API
 
 The current project uses the Gemini API because you get it for free. 
-It appears they recently changed the setup process instead of simply generating an API key on the AIStudio website [https://aistudio.google.com](https://aistudio.google.com/apikey) you now also have to set up a billing account [by pressing the "Go to billing View usage data](https://console.cloud.google.com/billing) in order to use the free API.
+It appears they recently changed the setup process instead of simply generating an API key on the AIStudio website [https://aistudio.google.com](https://aistudio.google.com/apikey) and use it by pasting it in the APIKey Input field in the app, you now also have to set up a billing account [by pressing the "Go to billing View usage data](https://console.cloud.google.com/billing) in order to activate the free APIKey.
 
 ---
 

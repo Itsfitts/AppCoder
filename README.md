@@ -21,6 +21,21 @@ When you're ready to take your app further, you can export the code and continue
 
 ---
 
+## When Running the Project and it Fails Try the Following 
+
+My settings and software:
+1. Most of these editors have a way to change line endings. Look in the bottom status bar or in the File/Edit menus for an option like "Line Separators," "Line Endings," or similar, and change it from "CRLF" to "LF".
+2. Use Android Studio Meerkat 2024.3.2
+3. Gradle jdk-21
+
+Issues I Experienced when Running the IDE App:
+1. Somtimes the gradle build fails in android studio - uninstall and run again
+2. Sometimes the build on the phone fails during the terminal run - uninstall and run again
+3. If you are stuck in the initial screen due to leaving the installation process you also need to uninstall and rerun the app installation
+
+
+---
+
 ## Alternative Terms
 
 - **App Maker**

@@ -23,7 +23,10 @@ When you're ready to take your app further, you can export the code and continue
 
 ## Setting up the Free API
 
-The current project uses the Gemini API because you get it for free. 
+The current project uses the Gemini API because:
+1. you get it for free
+2. Gemini is the best codeing model as of now
+3. I think it is a good idea to go with a Google LLM for Android programming even though it seems not particulary good at Kotlin the Android native programmin language. So maybe we should switch to Java instead since more data is available there. 
 It appears they recently changed the setup process instead of simply generating an API key on the AIStudio website [https://aistudio.google.com](https://aistudio.google.com/apikey) and use it by pasting it in the APIKey Input field in the app, you now also have to set up a billing account [by pressing the "Go to billing View usage data](https://console.cloud.google.com/billing) in order to activate the free APIKey.
 
 ---

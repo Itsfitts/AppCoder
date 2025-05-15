@@ -21,6 +21,13 @@ When you're ready to take your app further, you can export the code and continue
 
 ---
 
+## Setting up the Free API
+
+The current project uses the Gemini API because you get it for free. 
+It appears they recently changed the setup process instead of simply generating an API key on the AIStudio website [https://aistudio.google.com](https://aistudio.google.com/apikey) you now also have to set up a billing account [by pressing the "Go to billing View usage data](https://console.cloud.google.com/billing) in order to use the free API.
+
+---
+
 ## When Running the Project and it Fails Try the Following 
 
 My settings and software:
@@ -29,7 +36,7 @@ My settings and software:
 3. Gradle jdk-21
 
 Issues I Experienced when Running the IDE App:
-1. Somtimes the gradle build fails in android studio - uninstall and run again
+1. Somtimes the gradle build fails in android studio - simply run the graidle build again
 2. Sometimes the build on the phone fails during the terminal run - uninstall and run again
 3. If you are stuck in the initial screen due to leaving the installation process you also need to uninstall and rerun the app installation
 

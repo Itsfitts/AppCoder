@@ -1,6 +1,6 @@
 # 📱 AppCoder: Turn Your App Ideas into Reality – Right On Your Phone!
 
-**AppCoder** is a mobile Android app that empowers you to build fully functional applications directly on your smartphone—no programming experience required!
+**AppCoder** is a mobile Android app that empowers you to build apps directly on your phone — no programming experience required!
 
 ---
 
@@ -8,16 +8,16 @@
 
 > ⚠️ **IMPORTANT:** This project is actively under development. There is no downloadable `.apk` file available for direct installation yet. Please stay tuned for updates!
 
-> ✅ **Minimum Viable Product (MVP) is Ready for Testing!**
+> ✅ **Minimum Viable Product (MVP) is Ready for Testing using Android Studio!**
 > Here's how you can try it out:
 > 1. Clone this repository.
 > 2. Connect your Android smartphone to your computer.
-> 3. Build and install the AppCoder APK onto your phone (e.g., using Android Studio).
+> 3. Build and install the AppCoder APK onto your phone (Android Studio).
 > 4. Follow the on-device installation process for AppCoder.
 > 5. On the AppCoder main screen, you'll see a blue plus (+) button. Tap it.
 > 6. Enter an app name, a description for your app, and your Gemini API Key, then tap "Continue."
-> 7. The code for your described app will now be generated. After a few seconds, you can proceed with building the app you just described.
-> 8. Install your newly generated app. You're all set!
+> 7. The code for your described app will now be generated. After the code generation by the LLM is done, you can proceed with the build process (takes a few minitues on the first build).
+> 8. Install your newly generated app.
 
 ---
 
@@ -57,10 +57,10 @@ This gives AppCoder access to one of the best LLMs at no extra cost and without 
 
 Here are some tips if you encounter issues while running the project:
 
-**My Recommended Development Setup:**
+**My Development Setup (Just in case you have issues with your setup):**
 *   **Editor Line Endings:** Ensure your code editor uses **LF** (Linux/macOS) instead of CRLF (Windows) for line endings, especially for script files. Most editors have a setting for this (often in the status bar or File/Edit menus). (This issue should however be fixed with the last commit)
-*   **Android Studio:** I use Android Studio Giraffe | 2023.3.1 Patch 2 or newer (your "Meerkat 2024.3.2" might be a typo, as Meerkat was an older version. The current stable release is usually a good choice).
-*   **Gradle JDK:** JDK 21 (or a compatible current LTS version).
+*   **Android Studio:** I use Android Studio Meerkat 2024.3.2".
+*   **Gradle JDK:** JDK 21.
 
 **Known Issues and Solutions:**
 1.  **Gradle build fails in Android Studio:** Simply try running the build process again. This can sometimes resolve temporary glitches.
@@ -78,7 +78,6 @@ Here are some tips if you encounter issues while running the project:
 ---
 
 ## 📜 License
-
 
 ```
 AppCoder is based on AndroidIDE which is free software: you can redistribute it and/or modify

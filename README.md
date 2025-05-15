@@ -8,6 +8,8 @@
 
 > **CURRENTLY THIS PROJECT IS STILL IN A DEVELOPMENT PHASE AND THERE IS NO .APK FILE YET TO DOWNLOAD. STAY TUNED FOR FURTHER UPDATES.**
 
+> **However the minimal viable product state is ready. When cloning the project, connecting your phone and build the apk to your phone. After that simply follow the installation process. When the instalation is done you are on the main screen there you see a blue plus button. Press the button and fill out the app name app description API Key field and press continue. The code is now generated and after a few second you can contuinue with the build process of the app you just described. TWhen the build priocess is done follow the installation process.**
+
 ---
 
 ## Description

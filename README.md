@@ -15,12 +15,12 @@
 2.  **🔑 Get Your Free Gemini API Key:**
     *   AppCoder needs a Gemini API key to generate code automatically.
     *   Visit Google AI Studio: [https://aistudio.google.com/apikey](https://aistudio.google.com/apikey)
-    *   Sign in and click "Create API key". Copy this key ideally to your phones quick access storage.
+    *   Sign in and click "Create API key". Copy this key ideally to your phones clipboard.
 
 3.  **📲 Install & Use AppCoder:**
     *   Transfer the downloaded `.apk` file to your Android phone.
     *   On your phone, open a file manager, find the `.apk`, and tap to install.
-        *   👉 You might need to **enable "Install from unknown sources"** in your phone's settings.
+        *   You might need to **enable "Install from unknown sources"** in your phone's settings.
     *   After AppCoder installs and completes its initial setup (grant permissions, wait for installation of all the dependencies):
         *   Tap the **🔵 blue plus (+) button**.
         *   Enter an **App Name**, a **simple App Description** (keep it simple for now more complex apps will be possible in the future), paste your **Gemini API Key** and press "Generate & Modify App".

@@ -4,9 +4,9 @@
 
 ---
 
-## 🚀 Get Started with the MVP Release!
+## 🚀 Get Started with the First Release!
 
-**The AppCoder MVP (Minimum Viable Product) is ready for you to test!**
+**The First AppCoder Version is ready for you to test!**
 
 1.  **⬇️ Download the APK:**
     *   Go to the latest release: **[https://github.com/ChristophGeske/AppCoder/releases/tag/v1.0.0](https://github.com/ChristophGeske/AppCoder/releases/tag/v1.0.0)**
@@ -42,6 +42,13 @@ Simply describe your app vision, and AppCoder handles the code generation.
 Export the generated code to continue development on a desktop with professional tools.
 
 ---
+
+**What is AppCoder able to do?**
+*   **Not much yet:** Since it is the first version you are only able to generate bery simple apps.
+*   For example a dice roaling app might be possible or a app that greets you in many languages when opening.
+*   After the first build which takes longer follow up builds will only take around 1 minute from writing you app descriptio  to having the finished app installed on your phone.
+---
+
 
 ## ⚠️ Important Notes & Known Issues (MVP v1.0.0) [Bug fixes are planned 🛠️] 
 

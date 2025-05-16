@@ -10,12 +10,12 @@
 
 1.  **⬇️ Download the APK:**
     *   Go to the latest release: **[https://github.com/ChristophGeske/AppCoder/releases/tag/v1.0.0](https://github.com/ChristophGeske/AppCoder/releases/tag/v1.0.0)**
-    *   Download `app-arm64-v8a-release.apk` according to your device type).
+    *   Download `app-arm64-v8a-release.apk` according to your device type.
 
 2.  **🔑 Get Your Free Gemini API Key:**
     *   AppCoder needs a Gemini API key to generate code automatically.
     *   Visit Google AI Studio: [https://aistudio.google.com/apikey](https://aistudio.google.com/apikey)
-    *   Sign in and click "Create API key". Copy this key.
+    *   Sign in and click "Create API key". Copy this key ideally to your phones quick access storage.
 
 3.  **📲 Install & Use AppCoder:**
     *   Transfer the downloaded `.apk` file to your Android phone.

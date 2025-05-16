@@ -10,10 +10,10 @@
 
 1.  **⬇️ Download the APK:**
     *   Go to the latest release: **[https://github.com/ChristophGeske/AppCoder/releases/tag/v1.0.0](https://github.com/ChristophGeske/AppCoder/releases/tag/v1.0.0)**
-    *   Download `app-release.apk` (or `app-arm64-v8a-release.apk` if you prefer and know it's for your device).
+    *   Download `app-arm64-v8a-release.apk` according to your device type).
 
 2.  **🔑 Get Your Free Gemini API Key:**
-    *   AppCoder needs a Gemini API key to generate code.
+    *   AppCoder needs a Gemini API key to generate code automatically.
     *   Visit Google AI Studio: [https://aistudio.google.com/apikey](https://aistudio.google.com/apikey)
     *   Sign in and click "Create API key". Copy this key.
 
@@ -21,18 +21,17 @@
     *   Transfer the downloaded `.apk` file to your Android phone.
     *   On your phone, open a file manager, find the `.apk`, and tap to install.
         *   👉 You might need to **enable "Install from unknown sources"** in your phone's settings.
-    *   After AppCoder installs and completes its initial setup (grant permissions, wait for components):
+    *   After AppCoder installs and completes its initial setup (grant permissions, wait for installation of all the dependencies):
         *   Tap the **🔵 blue plus (+) button**.
-        *   Enter an **App Name**, a **simple App Description** (keep ideas straightforward for this MVP!), and paste your **Gemini API Key**.
-        *   Tap "Continue."
-    *   After code generation by the LLM (this can take a moment, especially on the first app build), you'll be prompted to **build** your new app.
+        *   Enter an **App Name**, a **simple App Description** (keep it simple for now more complex apps will be possible in the future), paste your **Gemini API Key** and press "Generate & Modify App".
+    *   After code generation by the LLM, press **continue to build**.
     *   When installing your *generated app*, you might need to **expand the installation prompt to find and select "Install anyway"**.
 
 ---
 
 ## 💡 What is AppCoder?
 
-AppCoder transforms your plain English descriptions into working app code using advanced LLMs like **Google's Gemini 2.5 Flash Preview**. [No change, keeping your specified model]
+AppCoder transforms your plain English descriptions into working app code using advanced LLMs like **Google's Gemini 2.5 Flash Preview**. 
 
 Simply describe your app vision, and AppCoder handles the code generation.
 
@@ -44,19 +43,21 @@ Export the generated code to continue development on a desktop with professional
 
 ---
 
-## ⚠️ Important Notes & Known Issues (MVP v1.0.0)
+## ⚠️ Important Notes & Known Issues (MVP v1.0.0) [Bug fixes are planned 🛠️] 
 
-*   **Simple App Ideas Work Best:** For this MVP, if the LLM generates non-working code (e.g., from a complex description), you must build a new app with a **new app name** (overwriting isn't implemented). Try simplifying your initial idea if it fails.
+*   **Simple App Ideas Work Best:** For this first version, if the LLM generates non-working code (e.g., from a complex description), you must build a new app with a **new app name** (overwriting isn't implemented yet). Try simplifying your initial idea if it fails.
 *   **AppCoder's Initial Setup:**
     *   The first run of AppCoder installs necessary components. This can occasionally fail. **Reinstalling the AppCoder `.apk` usually fixes this.**
-    *   During this initial setup, **use only on-screen buttons** (not system back/home buttons) to avoid getting stuck. If stuck, reinstall AppCoder. [Bug fix is planned 🛠️]
-*   **Gemini API Key Required:** You must enter your key for AppCoder to function.
+    *   During the initial setup, **use only on-screen buttons** (not system back/home buttons) to avoid getting stuck on the initial start screen. If stuck during installation, reinstall AppCoder. 
+*   **Modify Function:** Modifying existing apps is not working currently. All apps are one shot they either work on first generation or not.
 
 ---
 
-## 🛠️ For Developers: Building AppCoder from Source
+## 🛠️ For more serious Developers: Building AppCoder from Source
 
 This section is for those who want to compile AppCoder from its source code. **If you just downloaded the APK, you can skip this.**
+
+This might be interested for you if you want to implement your own LLM API calls or if you want to implement advanced LLM Agent features to improve the code generation like automated testing and such features.
 
 1.  **Clone this repository.**
 2.  **Connect your Android smartphone** to your computer.

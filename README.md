@@ -41,12 +41,11 @@ Simply describe your app vision, and AppCoder handles the code generation.
 
 Export the generated code to continue development on a desktop with professional tools.
 
----
-
 **What is AppCoder able to do?**
-*   **Not much yet:** Since it is the first version you are only able to generate bery simple apps.
+*   **Not much yet:** Since it is the first version you are only able to generate very simple apps.
+*   If the app is to complicated the LLM likely introduces to many errors and the build might fail or the installation or the installed app just dosn't contains the app idea you described.
 *   For example a dice roaling app might be possible or a app that greets you in many languages when opening.
-*   After the first build which takes longer follow up builds will only take around 1 minute from writing you app descriptio  to having the finished app installed on your phone.
+*   After the first build which takes longer follow up builds will only take around 1 minute from writing your app description to having the finished app installed on your phone.
 ---
 
 

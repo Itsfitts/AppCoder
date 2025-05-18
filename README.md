@@ -43,7 +43,8 @@ Export the generated code to continue development on a desktop with professional
 
 **What is AppCoder able to do?**
 *   **Not much yet:** Since it is the first version you are only able to generate very simple apps.
-*   If the app is to complicated the LLM likely introduces to many errors and the build might fail or the installation or the installed app just dosn't contains the app idea you described.
+*   If the app is to complicated is to complex the LLM likely introduces to many errors and the build might fail or the installation or the installed app just dosn't contains the app idea you described.
+*   Currently only existing files can be overriden limiting what you can do. For example a simple snake game would likely require more files and therefore fails.
 *   For example a dice roaling app might be possible or a app that greets you in many languages when opening.
 *   After the first build which takes longer follow up builds will only take around 1 minute from writing your app description to having the finished app installed on your phone.
 ---

@@ -42,11 +42,11 @@ Simply describe your app vision, and AppCoder handles the code generation.
 Export the generated code to continue development on a desktop with professional tools.
 
 **What is AppCoder able to do?**
-*   **Not much yet:** Since it is the first version you are only able to generate very simple apps.
+*   **Not much yet:** Since it is the first version many issues are not resolved and you are only able to generate very simple apps.
+*   Some examples that should worked in the current state are a Tiktokto game or a dice simulator for example
 *   If the app is to complicated is to complex the LLM likely introduces to many errors and the build might fail or the installation or the installed app just dosn't contains the app idea you described.
-*   Currently only existing files can be overriden limiting what you can do. For example a simple snake game would likely require more files and therefore fails.
-*   For example a dice roaling app might be possible or a app that greets you in many languages when opening.
-*   After the first build which takes longer follow up builds will only take around 1 minute from writing your app description to having the finished app installed on your phone.
+*   Currently only existing files can be overriden limiting what you can do. For example a simple snake game would likely require more files and therefore always fails.
+*   After the first build which takes longer follow up builds take around 50 seconds on a modern phone from posting your app description to having the finished app installed on your phone.
 ---
 
 

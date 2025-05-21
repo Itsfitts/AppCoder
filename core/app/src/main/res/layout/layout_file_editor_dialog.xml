@@ -23,7 +23,7 @@
                 android:id="@+id/app_name_input"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:inputType="text"
+                android:inputType="textCapWords"
                 android:imeOptions="actionNext" />
         </com.google.android.material.textfield.TextInputLayout>
 
@@ -41,12 +41,13 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:inputType="textMultiLine"
-                android:minLines="5"
+                android:minLines="3"
+                android:maxLines="5"
                 android:gravity="top|start"
-                android:imeOptions="actionNext" /> <!-- Changed imeOption -->
+                android:imeOptions="actionNext" />
         </com.google.android.material.textfield.TextInputLayout>
 
-        <!-- ****** START: ADDED API KEY FIELD ****** -->
+        <!-- API KEY FIELD -->
         <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/api_key_layout"
             style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
@@ -60,86 +61,124 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:inputType="textPassword"
-            android:imeOptions="actionDone" />
+                android:imeOptions="actionNext" />
         </com.google.android.material.textfield.TextInputLayout>
-        <!-- ****** END: ADDED API KEY FIELD ****** -->
 
-        <!-- Generate Button (Now triggers the full workflow) -->
-        <Button
-            android:id="@+id/generate_app_button"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Generate and Modify App"
-            android:layout_marginBottom="8dp"/>
-
-        <!-- Loading Indicator -->
-        <ProgressBar
-            android:id="@+id/loading_indicator"
-            style="?android:attr/progressBarStyle"
+        <!-- ***** START: MODEL SELECTION UI ***** -->
+        <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:visibility="gone"
-            android:layout_marginBottom="8dp"/>
+            android:layout_marginTop="4dp"
+            android:text="Select Gemini Model:"
+            style="?android:attr/textAppearanceSmall"
+            android:labelFor="@+id/model_spinner"/>
 
-        <!-- Status Area -->
-        <TextView
-            android:id="@+id/status_text"
+        <Spinner
+            android:id="@+id/model_spinner"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Ready"
-            android:textAppearance="?attr/textAppearanceBody2"
+            android:layout_marginTop="4dp"
+            android:minHeight="48dp"
+            android:background="@drawable/abc_spinner_textfield_background_material"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
             android:layout_marginBottom="8dp"/>
 
-        <!-- Log output area -->
         <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/log_output_layout"
+            android:id="@+id/custom_model_input_layout"
             style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="Generation Log">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/log_output"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="textMultiLine"
-                android:minLines="10"
-                android:maxLines="15"
-                android:gravity="top|start"
-                android:focusable="false"
-                android:clickable="false"
-                android:focusableInTouchMode="false"
-            android:scrollbars="vertical"/>
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <!-- Action Buttons (Initially hidden) -->
-        <LinearLayout
-            android:id="@+id/action_buttons_layout"
+            android:hint="Custom Model ID"
+            android:visibility="gone"
+        android:layout_marginBottom="8dp">
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/custom_model_input"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:visibility="gone"
-            android:layout_marginTop="8dp">
+            android:inputType="textNoSuggestions"
+            android:imeOptions="actionDone" />
+    </com.google.android.material.textfield.TextInputLayout>
+    <!-- ***** END: MODEL SELECTION UI ***** -->
 
-            <Button
-                android:id="@+id/continue_button"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/action_continue_to_build"
-                android:layout_marginEnd="4dp"/>
+    <!-- Generate Button -->
+    <Button
+        android:id="@+id/generate_app_button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Generate and Modify App"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="8dp"/>
 
-            <Button
-                android:id="@+id/modify_further_button"
-                style="@style/Widget.MaterialComponents.Button.TextButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Modify Further"
-                android:layout_marginStart="4dp"/>
-        </LinearLayout>
+    <!-- Loading Indicator -->
+    <ProgressBar
+        android:id="@+id/loading_indicator"
+        style="?android:attr/progressBarStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:visibility="gone"
+        android:layout_marginBottom="8dp"/>
 
+    <!-- Status Area -->
+    <TextView
+        android:id="@+id/status_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Ready"
+        android:textAppearance="?attr/textAppearanceBody2"
+        android:gravity="center_horizontal"
+        android:layout_marginBottom="8dp"/>
+
+    <!-- Log output area -->
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/log_output_layout"
+        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Generation Log"
+        android:layout_marginBottom="8dp">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/log_output"
+            android:layout_width="match_parent"
+            android:layout_height="120dp"
+            android:inputType="textMultiLine"
+            android:minLines="5"
+            android:maxLines="10"
+            android:gravity="top|start"
+            android:focusable="false"
+            android:clickable="false"
+            android:focusableInTouchMode="false"
+            android:scrollbars="vertical"/>
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <!-- Action Buttons -->
+    <LinearLayout
+        android:id="@+id/action_buttons_layout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        android:layout_marginTop="8dp">
+
+        <Button
+            android:id="@+id/continue_button"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/action_continue_to_build"
+            android:layout_marginEnd="4dp"/>
+
+        <Button
+            android:id="@+id/modify_further_button"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Modify Further (Dismiss)"
+            android:layout_marginStart="4dp"/>
     </LinearLayout>
-</androidx.core.widget.NestedScrollView>
+</LinearLayout>
+    </androidx.core.widget.NestedScrollView>

@@ -9,11 +9,11 @@ import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-/**
- * Helper class for interacting with the Gemini API.
- */
+// Define a default model - THIS IS THE PRIMARY SOURCE FOR THE DEFAULT
+const val DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-preview-05-20" // << YOUR DESIRED DEFAULT
+
 class GeminiHelper(
-    private val apiKeyProvider: () -> String, // Function to securely get the API key
+    private val apiKeyProvider: () -> String,
     private val errorHandler: (String) -> Unit,
     private val uiCallback: (block: () -> Unit) -> Unit
 ) {
@@ -23,16 +23,37 @@ class GeminiHelper(
         .writeTimeout(120, TimeUnit.SECONDS)
         .build()
 
-    // Sie können hier einen Standard-Thinking-Budget-Wert definieren
-    // oder ihn als Parameter zur sendGeminiRequest Methode hinzufügen,
-    // wenn Sie ihn dynamisch steuern möchten.
-    private val defaultThinkingBudget = 0 // Oder 1024, je nach Bedarf
+    private val defaultThinkingBudget = 0
 
-    fun sendGeminiRequest(contents: List<JSONObject>, callback: (JSONObject) -> Unit) {
+    // This will be initialized with DEFAULT_GEMINI_MODEL by default
+    var currentModelIdentifier: String = DEFAULT_GEMINI_MODEL
+        private set // Keep setter private, use setModel()
+
+    fun setModel(modelId: String) {
+        if (modelId.isNotBlank()) {
+            currentModelIdentifier = modelId
+            Log.i("GeminiHelper", "Gemini model set to: $currentModelIdentifier")
+        } else {
+            Log.w("GeminiHelper", "Attempted to set a blank model ID. Using default: $DEFAULT_GEMINI_MODEL")
+            currentModelIdentifier = DEFAULT_GEMINI_MODEL
+        }
+    }
+
+    fun sendGeminiRequest(
+        contents: List<JSONObject>,
+        callback: (JSONObject) -> Unit,
+        modelIdentifierOverride: String? = null
+    ) {
         val apiKey = apiKeyProvider()
 
         if (apiKey.isBlank()) {
             errorHandler("Gemini API Key is not set.")
+            return
+        }
+
+        val effectiveModelIdentifier = modelIdentifierOverride ?: currentModelIdentifier
+        if (effectiveModelIdentifier.isBlank()){
+            errorHandler("Gemini Model Identifier is critically not set.")
             return
         }
 
@@ -41,9 +62,8 @@ class GeminiHelper(
             put("generationConfig", JSONObject().apply {
                 put("temperature", 0.5)
                 put("maxOutputTokens", 8192)
-                // NEU: thinkingConfig und thinkingBudget hinzufügen
                 put("thinkingConfig", JSONObject().apply {
-                    put("thinkingBudget", defaultThinkingBudget) // Verwenden Sie hier den gewünschten Wert
+                    put("thinkingBudget", defaultThinkingBudget)
                 })
             })
             put("safetySettings", JSONArray().apply {
@@ -57,16 +77,16 @@ class GeminiHelper(
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val requestBody = requestJson.toString().toRequestBody(mediaType)
 
-        // Korrigierter Modellname
-        val modelIdentifier = "gemini-2.5-flash-preview-04-17"
+        Log.d("GeminiHelper", "Sending request to model: $effectiveModelIdentifier")
+
         val request = Request.Builder()
-            .url("https://generativelanguage.googleapis.com/v1beta/models/${modelIdentifier}:generateContent?key=$apiKey")
+            .url("https://generativelanguage.googleapis.com/v1beta/models/${effectiveModelIdentifier}:generateContent?key=$apiKey")
             .post(requestBody)
             .build()
 
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                errorHandler("API Network Error: ${e.message}")
+                errorHandler("API Network Error (${effectiveModelIdentifier}): ${e.message}")
             }
 
             override fun onResponse(call: Call, response: Response) {
@@ -75,13 +95,10 @@ class GeminiHelper(
                     if (!response.isSuccessful || responseBody == null) {
                         var errorBodyDetails = responseBody ?: "No error body"
                         try {
-                            // Versuche, den Fehlerbody als JSON zu parsen, für mehr Details
                             val errorJson = JSONObject(responseBody)
                             errorBodyDetails = errorJson.getJSONObject("error").getString("message")
-                        } catch (jsonEx: Exception) {
-                            // Ignoriere, wenn der Fehlerbody kein JSON ist
-                        }
-                        errorHandler("API Error: ${response.code} ${response.message} - $errorBodyDetails")
+                        } catch (jsonEx: Exception) { /* Ignore */ }
+                        errorHandler("API Error (${effectiveModelIdentifier} - Code: ${response.code}): $errorBodyDetails")
                         return
                     }
 
@@ -91,31 +108,28 @@ class GeminiHelper(
                         jsonResponse.getJSONObject("promptFeedback").optString("blockReason", null) != null) {
                         val reason = jsonResponse.getJSONObject("promptFeedback").getString("blockReason")
                         val safetyRatings = jsonResponse.getJSONObject("promptFeedback").optJSONArray("safetyRatings")?.toString(2) ?: "N/A"
-                        errorHandler("API Response Blocked: $reason. Safety Ratings: $safetyRatings")
+                        errorHandler("API Response Blocked (${effectiveModelIdentifier}): $reason. Safety Ratings: $safetyRatings")
                     } else if (!jsonResponse.has("candidates") || jsonResponse.getJSONArray("candidates").length() == 0) {
-                        val finishReason = jsonResponse.optJSONObject("promptFeedback")?.optString("blockReason") // Manchmal ist der Block-Grund hier
-                            ?: jsonResponse.optJSONArray("candidates")?.optJSONObject(0)?.optString("finishReason")
-
-                        // Überprüfen, ob es überhaupt einen Text-Teil gibt, bevor man von "leer" spricht
+                        val finishReasonFromPromptFeedback = jsonResponse.optJSONObject("promptFeedback")?.optString("blockReason")
+                        val finishReasonFromCandidate = jsonResponse.optJSONArray("candidates")?.optJSONObject(0)?.optString("finishReason")
+                        val finishReason = finishReasonFromPromptFeedback ?: finishReasonFromCandidate
                         val textExistsInResponse = responseBody.contains("\"text\"")
 
                         if (finishReason != null && finishReason != "STOP" && finishReason != "MAX_TOKENS" && !textExistsInResponse) {
-                            errorHandler("API Error: No valid candidates or text found. Finish Reason: $finishReason. Response: ${jsonResponse.toString(2)}")
+                            errorHandler("API Error (${effectiveModelIdentifier}): No valid candidates or text. Finish: $finishReason. See Logcat for full response.")
+                            Log.w("GeminiHelper", "Problematic Response (${effectiveModelIdentifier}): ${jsonResponse.toString(2)}")
                         } else if (!textExistsInResponse) {
-                            errorHandler("API Error: Empty response or no text part found. Finish Reason: $finishReason. Response: ${jsonResponse.toString(2)}")
-                        }
-                        else {
-                            // Wenn der FinishReason STOP oder MAX_TOKENS ist, aber kein Text da ist,
-                            // könnte das auch ein Problem sein, aber wir lassen es vorerst durch,
-                            // wenn die obigen Bedingungen nicht zutreffen.
-                            // Die Logik hier könnte je nach API-Verhalten noch verfeinert werden.
+                            errorHandler("API Error (${effectiveModelIdentifier}): Empty response or no text part. Finish: $finishReason. See Logcat for full response.")
+                            Log.w("GeminiHelper", "Empty Response Text (${effectiveModelIdentifier}): ${jsonResponse.toString(2)}")
+                        } else {
                             uiCallback { callback(jsonResponse) }
                         }
                     } else {
                         uiCallback { callback(jsonResponse) }
                     }
                 } catch (e: Exception) {
-                    errorHandler("Error processing API response: ${e.message}. Response Body: $responseBody")
+                    errorHandler("Error processing API response (${effectiveModelIdentifier}): ${e.message}. See Logcat for response body.")
+                    Log.e("GeminiHelper", "Response Body on processing error: $responseBody", e)
                 } finally {
                     response.body?.close()
                 }
@@ -123,7 +137,6 @@ class GeminiHelper(
         })
     }
 
-    // --- extractTextFromGeminiResponse, extractJsonArrayFromText, parseFileChanges bleiben unverändert ---
     fun extractTextFromGeminiResponse(response: JSONObject): String {
         try {
             val candidates = response.optJSONArray("candidates")
@@ -142,11 +155,10 @@ class GeminiHelper(
                 }
             }
             Log.w("GeminiHelper", "Could not extract text from Gemini response structure: ${response.toString(2)}")
-            // Nicht errorHandler hier aufrufen, da die Antwort an sich gültig sein kann, nur ohne Text
             return ""
         } catch (e: Exception) {
             Log.e("GeminiHelper", "Error extracting text from response", e)
-            errorHandler("Error extracting text from response: ${e.message}") // Hier ist es ein Verarbeitungsfehler
+            errorHandler("Error extracting text from response: ${e.message}")
             return ""
         }
     }
@@ -161,8 +173,6 @@ class GeminiHelper(
         if (cleanedText.startsWith("[") && cleanedText.endsWith("]")) {
             return cleanedText
         }
-        // Nicht unbedingt ein Fehler, den man hier an den errorHandler geben muss,
-        // es sei denn, ein JSON-Array wird IMMER erwartet.
         throw IllegalArgumentException("No JSON array found in response text.")
     }
 
@@ -184,42 +194,9 @@ class GeminiHelper(
         if (matches.count() == 0 && text.contains("```")) {
             logAppender("⚠️ AI response contained code blocks but couldn't parse valid FILE: markers.\n")
         } else if (matches.count() == 0 && !text.isBlank()) {
-            // Diese Logik könnte zu viele False Positives erzeugen, wenn nicht immer File-Blöcke erwartet werden.
             // logAppender("⚠️ AI response did not contain recognizable file modification blocks.\nResponse:\n$text\n")
         }
         return result
     }
-}
-
-// --- GeminiConversation bleibt unverändert ---
-class GeminiConversation {
-    private val messages = mutableListOf<JSONObject>()
-
-    fun addUserMessage(content: String) {
-        messages.add(JSONObject().apply {
-            put("role", "user")
-            put("parts", JSONArray().apply {
-                put(JSONObject().apply { put("text", content) })
-            })
-        })
-    }
-
-    fun addModelMessage(rawResponseText: String) {
-        if (rawResponseText.isNotBlank()) {
-            messages.add(JSONObject().apply {
-                put("role", "model")
-                put("parts", JSONArray().apply {
-                    put(JSONObject().apply { put("text", rawResponseText) })
-                })
-            })
-        } else {
-            Log.w("GeminiHelper", "Attempted to add empty model message to conversation.")
-        }
-    }
-
-    fun getContents(): List<JSONObject> = messages.toList()
-
-    fun clear() {
-        messages.clear()
-    }
+    // GeminiConversation class has been moved to its own file or outside this class
 }

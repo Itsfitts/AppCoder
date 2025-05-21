@@ -9,8 +9,8 @@
 **The First AppCoder Version is ready for you to test!**
 
 1.  **⬇️ Download the APK:**
-    *   Go to the latest release: **[https://github.com/ChristophGeske/AppCoder/releases/tag/v1.0.0](https://github.com/ChristophGeske/AppCoder/releases/tag/v1.0.0)**
-    *   Download `app-arm64-v8a-release.apk` according to your device type.
+    *   Go to the **[latest release page](https://github.com/ChristophGeske/AppCoder/releases)**
+    *   Download `app-arm64-v8a-release.apk` or another .apk according to your device type.
 
 2.  **🔑 Get Your Free Gemini API Key:**
     *   AppCoder needs a Gemini API key to generate code automatically.

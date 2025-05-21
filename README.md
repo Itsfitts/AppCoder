@@ -25,7 +25,7 @@
         *   Tap the **🔵 blue plus (+) button**.
         *   Enter an **App Name**, a **simple App Description** (keep it simple for now more complex apps will be possible in the future), paste your **Gemini API Key** and press "Generate & Modify App".
     *   After code generation by the LLM, press **continue to build**.
-    *   When installing your *generated app*, you might need to **expand the installation prompt to find and select "Install anyway"**.
+    *   When installing your *generated app*, you might need to **expand the installation popup to find and select "Install anyway"**.
 
 ---
 
@@ -44,7 +44,7 @@ Export the generated code to continue development on a desktop with professional
 **What is AppCoder able to do?**
 *   **Not much yet:** Since it is the first version many issues are not resolved and you are only able to generate very simple apps.
 *   Some examples that should worked in the current state are a Tiktokto game or a dice simulator for example
-*   If the app is to complicated is to complex the LLM likely introduces to many errors and the build might fail or the installation or the installed app just dosn't contains the app idea you described.
+*   If the app is to complicated is to complex the LLM likely introduces to many errors and the build might fail or the installation fails or the installed app crashes on start or contains to major bugs.
 *   Currently only existing files can be overriden limiting what you can do. For example a simple snake game would likely require more files and therefore always fails.
 *   After the first build which takes longer follow up builds take around 50 seconds on a modern phone from posting your app description to having the finished app installed on your phone.
 ---

@@ -1,0 +1,14 @@
+# Default to LF line endings for text files in the repository
+* text=auto eol=lf
+
+# Ensure shell scripts (.sh) always use LF line endings
+# This is the crucial line for your idesetup.sh script
+*.sh text eol=lf
+
+# Ensure Windows batch files (.bat) always use CRLF line endings (optional, but good practice)
+*.bat text eol=crlf
+
+# You can add other specific rules if needed, e.g., for Visual Studio files
+# if they are part of your main project and not just a submodule.
+# *.cs     diff=csharp
+# *.sln    merge=union

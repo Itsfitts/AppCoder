@@ -55,7 +55,7 @@ Export the generated code to continue development on a desktop with professional
 *   **Simple App Ideas Work Best:** For this first version, if the LLM generates non-working code (e.g., from a complex description), you must build a new app with a **new app name** (overwriting isn't implemented yet). Try simplifying your initial idea if it fails.
 *   **AppCoder's Initial Setup:**
     *   The first run of AppCoder installs necessary components. This can occasionally fail. **Reinstalling the AppCoder `.apk` usually fixes this.**
-    *   During the initial setup, **use only on-screen buttons** (not system back/home buttons) to avoid getting stuck on the initial start screen. If stuck during installation, reinstall AppCoder. 
+    *   When you close the app during the initial setup, you might get stuck on the initial start screen. If stuck during initial setup, reinstall AppCoder to start the setup process again. 
 *   **Modify Function:** Modifying existing apps is not working currently. All apps are one shot they either work on first generation or not.
 
 ---

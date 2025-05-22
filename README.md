@@ -75,6 +75,7 @@ This might be interested for you if you want to implement your own LLM API calls
 5.  **Troubleshooting Builds from Source:**
     *   **Gradle build fails in Android Studio:** Try running the build process again.
     *   **Build of the *generated app* (by AppCoder) on the phone fails (during its terminal run):** Uninstall the partially built app and restart the build process within AppCoder.
+6. You find the LLM related Code under AppCoder\core\app\src\main\java\com\itsaky\androidide\dialogs the rest of the app is basically the original AndroidIDE code only modefied in a few areas for example getting it streamlined to better work for LLM based development.
 
 ---
 ## ✨ Alternative Terms / Inspiration

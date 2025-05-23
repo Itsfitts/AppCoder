@@ -4,12 +4,16 @@ import android.app.Dialog
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.text.method.ScrollingMovementMethod
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
+import android.view.inputmethod.InputMethodManager
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.AutoCompleteTextView
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -19,36 +23,26 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.os.bundleOf
 import androidx.fragment.app.DialogFragment
-import com.google.android.material.textfield.TextInputEditText // Keep this
+import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
-import com.itsaky.androidide.R
+import com.itsaky.androidide.R // Make sure this R is correct for your module
 import com.itsaky.androidide.activities.MainActivity
-import com.itsaky.androidide.lookup.Lookup
-import com.itsaky.androidide.models.NewProjectDetails
-import com.itsaky.androidide.projects.builder.BuildService
-import com.itsaky.androidide.services.builder.GradleBuildService
-import com.itsaky.androidide.templates.BooleanParameter
-import com.itsaky.androidide.templates.EnumParameter
-import com.itsaky.androidide.templates.Language
-import com.itsaky.androidide.templates.ProjectTemplateRecipeResult
-import com.itsaky.androidide.templates.Sdk
-import com.itsaky.androidide.templates.StringParameter
-import com.itsaky.androidide.templates.impl.basicActivity.basicActivityProject
-import com.itsaky.androidide.utils.TemplateRecipeExecutor
-import org.json.JSONArray
-import org.json.JSONObject
-import org.slf4j.LoggerFactory
+// Import your helper classes if they are in the same package,
+// otherwise use full package names or add proper imports.
+// Assuming ProjectOperationsHandler and GeminiWorkflowCoordinator are in this package:
+// import com.itsaky.androidide.dialogs.ProjectOperationsHandler
+// import com.itsaky.androidide.dialogs.GeminiWorkflowCoordinator
+// Assuming GeminiHelper is also correctly imported/accessible
+// import com.itsaky.androidide.dialogs.DEFAULT_GEMINI_MODEL (from GeminiHelper.kt)
 import java.io.File
-import java.io.FileReader
-import java.io.FileWriter
-import java.io.IOException
-import java.util.*
 import kotlin.concurrent.thread
 
 class FileEditorDialog : DialogFragment() {
 
-    private val log = LoggerFactory.getLogger(javaClass.simpleName)
-    private lateinit var appNameInput: TextInputEditText // Stays as TextInputEditText for now
+    private val logger = org.slf4j.LoggerFactory.getLogger(javaClass.simpleName)
+
+    // UI Views
+    private lateinit var appNameAutocomplete: AutoCompleteTextView
     private lateinit var appDescriptionInput: TextInputEditText
     private lateinit var apiKeyInput: TextInputEditText
     private lateinit var modelSpinner: Spinner
@@ -62,54 +56,62 @@ class FileEditorDialog : DialogFragment() {
     private lateinit var continueButton: Button
     private lateinit var modifyFurtherButton: Button
 
+    // Properties
     private lateinit var projectsBaseDir: File
-    private var currentProjectDir: File? = null
-    private var isModifyingExistingProject = false // New flag to track if we are modifying
-
-    private lateinit var geminiHelper: GeminiHelper
-    private val conversation = GeminiConversation()
-    private val selectedFilesForModification = mutableListOf<String>()
+    internal var currentProjectDir: File? = null
+    internal var isModifyingExistingProject = false // Flag for current workflow intent
+    private var existingProjectNames = listOf<String>()
 
     private lateinit var prefs: SharedPreferences
 
+    // Helper Classes
+    private lateinit var projectOperationsHandler: ProjectOperationsHandler
+    private lateinit var geminiWorkflowCoordinator: GeminiWorkflowCoordinator
+    private lateinit var geminiHelper: GeminiHelper // For model management primarily
+
     internal enum class WorkflowState {
-        IDLE, CREATING_PROJECT, MODIFYING_EXISTING_PROJECT, // Added a state for clarity
-        SELECTING_FILES, GENERATING_CODE, READY_FOR_ACTION, ERROR
+        IDLE,
+        CREATING_PROJECT_TEMPLATE,
+        PREPARING_EXISTING_PROJECT,
+        SELECTING_FILES,
+        GENERATING_CODE,
+        READY_FOR_ACTION,
+        ERROR
     }
     internal var currentState = WorkflowState.IDLE
-
-    internal val buildService: GradleBuildService? by lazy {
-        Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE) as? GradleBuildService
-    }
+        private set
 
     private val predefinedModels by lazy {
         listOf(
-            DEFAULT_GEMINI_MODEL to "Gemini 2.5 Flash (Default - Preview 05-20)",
+            DEFAULT_GEMINI_MODEL to "Gemini 2.5 Flash (Default - Preview 05-20)", // Using const from GeminiHelper
             "gemini-1.5-flash-latest" to "Gemini 1.5 Flash (Stable)",
             "gemini-1.5-pro-latest" to "Gemini 1.5 Pro (Stable)",
             "gemini-2.5-pro-preview-05-06" to "Gemini 2.5 Pro (Preview 05-06)"
         ).distinctBy { it.first }
     }
-
     private val customModelOptionText = "Enter Custom Model ID..."
-    private var currentSelectedModelIdInternal: String = DEFAULT_GEMINI_MODEL
+    private var currentSelectedModelIdInternal: String = DEFAULT_GEMINI_MODEL // Using const from GeminiHelper
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val basePath = requireArguments().getString(ARG_PROJECTS_BASE_DIR)
-        if (basePath == null) {
-            Log.e(TAG, "Projects base directory argument is missing!")
-            Toast.makeText(requireContext(), "Error: Projects base directory not specified.", Toast.LENGTH_LONG).show()
-            dismiss(); return
-        }
+            ?: run {
+                Log.e(TAG, "Projects base directory argument is missing!")
+                // Consider using a string resource for user-facing messages
+                Toast.makeText(requireContext(), "Error: Projects base directory not specified.", Toast.LENGTH_LONG).show()
+                dismiss()
+                return
+            }
         projectsBaseDir = File(basePath)
         if (!projectsBaseDir.isDirectory) {
             Log.e(TAG, "Projects base directory does not exist or is not a directory: $basePath")
             Toast.makeText(requireContext(), "Error: Invalid projects base directory.", Toast.LENGTH_LONG).show()
-            dismiss(); return
+            dismiss()
+            return
         }
 
         prefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
         geminiHelper = GeminiHelper(
             apiKeyProvider = { apiKeyInput.text.toString().trim() },
             errorHandler = ::handleError,
@@ -118,15 +120,34 @@ class FileEditorDialog : DialogFragment() {
         val savedModel = prefs.getString(KEY_GEMINI_MODEL, DEFAULT_GEMINI_MODEL) ?: DEFAULT_GEMINI_MODEL
         geminiHelper.setModel(savedModel)
         currentSelectedModelIdInternal = savedModel
-        Log.d(TAG, "onCreate: Initial model set in GeminiHelper to: $savedModel")
+
+        projectOperationsHandler = ProjectOperationsHandler(projectsBaseDir, ::appendToLog, ::handleError, this)
+        geminiWorkflowCoordinator = GeminiWorkflowCoordinator(geminiHelper, ::appendToLog, ::handleError, this)
+
+        existingProjectNames = projectOperationsHandler.listExistingProjectNames()
     }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val builder = AlertDialog.Builder(requireContext())
         val inflater = requireActivity().layoutInflater
-        val view = inflater.inflate(R.layout.layout_file_editor_dialog, null) // Using your original layout ID
+        val view = inflater.inflate(R.layout.layout_file_editor_dialog, null)
 
-        appNameInput = view.findViewById(R.id.app_name_input) // Original ID
+        bindViews(view)
+        setupAppNameAutocomplete()
+        setupListeners()
+        loadApiKey()
+        setupModelSpinner()
+
+        builder.setView(view)
+            .setTitle("AI App Generator / Modifier")
+            .setPositiveButton("Close", null) // We handle dismiss explicitly or with other buttons
+
+        updateUiForState()
+        return builder.create()
+    }
+
+    private fun bindViews(view: View) {
+        appNameAutocomplete = view.findViewById(R.id.app_name_autocomplete)
         appDescriptionInput = view.findViewById(R.id.app_description_input)
         apiKeyInput = view.findViewById(R.id.api_key_input)
         modelSpinner = view.findViewById(R.id.model_spinner)
@@ -140,99 +161,107 @@ class FileEditorDialog : DialogFragment() {
         continueButton = view.findViewById(R.id.continue_button)
         modifyFurtherButton = view.findViewById(R.id.modify_further_button)
 
-        logOutput.isEnabled = false
         logOutput.movementMethod = ScrollingMovementMethod()
+        logOutput.isFocusable = false
+    }
 
-        loadApiKey()
-        setupModelSpinner()
+    private fun setupAppNameAutocomplete() {
+        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, existingProjectNames)
+        appNameAutocomplete.setAdapter(adapter)
+        appNameAutocomplete.threshold = 1
 
+        appNameAutocomplete.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                val enteredName = s.toString().trim()
+                isModifyingExistingProject = enteredName.isNotEmpty() && existingProjectNames.contains(enteredName)
+                activity?.runOnUiThread { updateUiForState() }
+            }
+        })
+
+        appNameAutocomplete.setOnItemClickListener { parent, _, position, _ ->
+            val selectedName = parent.getItemAtPosition(position) as String
+            Log.d(TAG, "Existing project selected from dropdown: $selectedName")
+            isModifyingExistingProject = true
+            activity?.runOnUiThread { updateUiForState() }
+            val imm = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            imm?.hideSoftInputFromWindow(appNameAutocomplete.windowToken, 0)
+            appNameAutocomplete.clearFocus()
+        }
+    }
+
+    private fun setupListeners() {
         generateButton.setOnClickListener {
             if (currentState == WorkflowState.IDLE || currentState == WorkflowState.ERROR || currentState == WorkflowState.READY_FOR_ACTION) {
                 saveApiKey()
                 saveAndSetSelectedModel()
-                startProjectGenerationWorkflow() // This will be modified
+                initiateWorkflow()
             }
         }
         continueButton.setOnClickListener {
             if (currentState == WorkflowState.READY_FOR_ACTION && currentProjectDir != null) {
-                val mainActivity = activity as? MainActivity
-                if (mainActivity != null) {
-                    appendToLog("Opening project in editor...\n")
-                    mainActivity.openProject(currentProjectDir!!)
-                    dismiss()
-                } else {
-                    handleError("Could not get MainActivity reference to open project.")
-                }
+                (activity as? MainActivity)?.openProject(currentProjectDir!!)
+                dismiss()
             } else {
                 appendToLog("Project not ready or directory not set. Cannot continue.\n")
             }
         }
         modifyFurtherButton.setOnClickListener { dismiss() }
-
-        builder.setView(view)
-            .setTitle("AI App Generator / Modifier") // Updated title slightly
-            .setPositiveButton("Close") { _, _ -> dismiss() }
-
-        updateUiForState()
-        return builder.create()
     }
 
     private fun loadApiKey() {
-        val savedKey = prefs.getString(KEY_API_KEY, "") ?: ""
-        apiKeyInput.setText(savedKey)
+        apiKeyInput.setText(prefs.getString(KEY_API_KEY, ""))
     }
 
     private fun saveApiKey() {
-        val currentKey = apiKeyInput.text.toString().trim()
-        prefs.edit().putString(KEY_API_KEY, currentKey).apply()
+        prefs.edit().putString(KEY_API_KEY, apiKeyInput.text.toString().trim()).apply()
     }
 
     private fun setupModelSpinner() {
-        val displayNames = predefinedModels.map { it.second }.toMutableList()
-        displayNames.add(customModelOptionText)
-        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, displayNames).also {
-            it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        val displayNames = predefinedModels.map { it.second }.toMutableList().also {
+            it.add(customModelOptionText)
+        }
+        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, displayNames).apply {
+            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         }
         modelSpinner.adapter = adapter
+
         val initialModelId = currentSelectedModelIdInternal
-        val predefinedModelIndex = predefinedModels.indexOfFirst { it.first == initialModelId }
-        Log.d(TAG, "setupModelSpinner: Initial model to select: $initialModelId")
-        if (predefinedModelIndex != -1) {
-            modelSpinner.setSelection(predefinedModelIndex, false)
+        val predefinedIndex = predefinedModels.indexOfFirst { it.first == initialModelId }
+
+        if (predefinedIndex != -1) {
+            modelSpinner.setSelection(predefinedIndex, false)
             customModelInputLayout.visibility = View.GONE
-            customModelInput.setText("" as CharSequence)
-            Log.d(TAG, "setupModelSpinner: Selected predefined model: ${predefinedModels[predefinedModelIndex].second}")
+            customModelInput.text = null
+        } else if (initialModelId.isNotEmpty() && initialModelId != DEFAULT_GEMINI_MODEL) {
+            modelSpinner.setSelection(displayNames.indexOf(customModelOptionText), false)
+            customModelInputLayout.visibility = View.VISIBLE
+            customModelInput.setText(initialModelId)
         } else {
-            if (initialModelId.isNotEmpty() && initialModelId != DEFAULT_GEMINI_MODEL) {
-                modelSpinner.setSelection(displayNames.indexOf(customModelOptionText), false)
-                customModelInputLayout.visibility = View.VISIBLE
-                customModelInput.setText(initialModelId)
-                Log.d(TAG, "setupModelSpinner: Selected custom model option, input: $initialModelId")
-            } else {
-                val defaultIndex = predefinedModels.indexOfFirst { it.first == DEFAULT_GEMINI_MODEL }
-                modelSpinner.setSelection(if (defaultIndex != -1) defaultIndex else 0, false)
-                customModelInputLayout.visibility = View.GONE
-                currentSelectedModelIdInternal = if (defaultIndex != -1) predefinedModels[defaultIndex].first else predefinedModels.firstOrNull()?.first ?: DEFAULT_GEMINI_MODEL
-                Log.d(TAG, "setupModelSpinner: Fallback or default selected: $currentSelectedModelIdInternal")
-            }
+            val defaultIndexInPredefined = predefinedModels.indexOfFirst { it.first == DEFAULT_GEMINI_MODEL }
+            val selection = if (defaultIndexInPredefined != -1) defaultIndexInPredefined else 0
+            modelSpinner.setSelection(selection, false)
+            customModelInputLayout.visibility = View.GONE
+            currentSelectedModelIdInternal = predefinedModels.getOrNull(selection)?.first ?: DEFAULT_GEMINI_MODEL
+            geminiHelper.setModel(currentSelectedModelIdInternal)
         }
-        geminiHelper.setModel(currentSelectedModelIdInternal)
+
         modelSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 val selectedDisplayName = displayNames.getOrElse(position) { "" }
-                Log.d(TAG, "Spinner onItemSelected: $selectedDisplayName at pos $position")
                 if (selectedDisplayName == customModelOptionText) {
                     customModelInputLayout.visibility = View.VISIBLE
                 } else {
                     customModelInputLayout.visibility = View.GONE
-                    customModelInput.setText("" as CharSequence)
+                    customModelInput.text = null
                     if (position < predefinedModels.size) {
                         val newModelId = predefinedModels[position].first
                         if (newModelId != currentSelectedModelIdInternal) {
                             currentSelectedModelIdInternal = newModelId
-                            geminiHelper.setModel(currentSelectedModelIdInternal)
-                            prefs.edit().putString(KEY_GEMINI_MODEL, currentSelectedModelIdInternal).apply()
-                            Log.d(TAG, "Spinner selected predefined: $currentSelectedModelIdInternal. Saved.")
+                            geminiHelper.setModel(newModelId)
+                            prefs.edit().putString(KEY_GEMINI_MODEL, newModelId).apply()
+                            Log.d(TAG, "Spinner selected predefined: $newModelId. Saved.")
                         }
                     }
                 }
@@ -244,497 +273,198 @@ class FileEditorDialog : DialogFragment() {
 
     private fun saveAndSetSelectedModel() {
         val selectedSpinnerPosition = modelSpinner.selectedItemPosition
-        val displayNames = predefinedModels.map { it.second }.toMutableList()
-        displayNames.add(customModelOptionText)
-        val selectedDisplayName = displayNames.getOrElse(selectedSpinnerPosition) {
-            if (predefinedModels.isNotEmpty()) predefinedModels.first().second else ""
-        }
-        val finalModelIdToUse: String
-        if (selectedDisplayName == customModelOptionText) {
-            val customEnteredId = customModelInput.text.toString().trim()
-            if (customEnteredId.isBlank()) {
-                Toast.makeText(requireContext(), "Custom model ID is blank. Using default.", Toast.LENGTH_SHORT).show()
-                finalModelIdToUse = DEFAULT_GEMINI_MODEL
-                val defaultIndexInPredefined = predefinedModels.indexOfFirst { it.first == DEFAULT_GEMINI_MODEL }
-                if (defaultIndexInPredefined != -1) {
-                    modelSpinner.setSelection(defaultIndexInPredefined)
-                } else {
-                    modelSpinner.setSelection(0)
-                }
+        val displayNames = predefinedModels.map { it.second }.toMutableList().also { it.add(customModelOptionText) }
+        val selectedDisplayName = displayNames.getOrElse(selectedSpinnerPosition) { predefinedModels.firstOrNull()?.second ?: "" }
+
+        val finalModelId = if (selectedDisplayName == customModelOptionText) {
+            customModelInput.text.toString().trim().ifBlank {
+                Toast.makeText(requireContext(), "Custom model ID blank. Using default.", Toast.LENGTH_SHORT).show()
+                val defaultIndex = predefinedModels.indexOfFirst { it.first == DEFAULT_GEMINI_MODEL }
+                modelSpinner.setSelection(if (defaultIndex != -1) defaultIndex else 0)
                 customModelInputLayout.visibility = View.GONE
-            } else {
-                finalModelIdToUse = customEnteredId
-            }
-        } else {
-            finalModelIdToUse = if (selectedSpinnerPosition < predefinedModels.size) {
-                predefinedModels[selectedSpinnerPosition].first
-            } else {
-                Log.w(TAG, "Spinner position out of bounds for predefined models, using default.")
                 DEFAULT_GEMINI_MODEL
             }
+        } else {
+            predefinedModels.getOrNull(selectedSpinnerPosition)?.first ?: DEFAULT_GEMINI_MODEL
         }
-        currentSelectedModelIdInternal = finalModelIdToUse
-        geminiHelper.setModel(finalModelIdToUse)
-        prefs.edit().putString(KEY_GEMINI_MODEL, finalModelIdToUse).apply()
-        Log.i(TAG, "Final model saved and set for generation: $finalModelIdToUse")
+
+        currentSelectedModelIdInternal = finalModelId
+        geminiHelper.setModel(finalModelId)
+        prefs.edit().putString(KEY_GEMINI_MODEL, finalModelId).apply()
+        Log.i(TAG, "Final model saved and set for generation: $finalModelId")
     }
 
-    // *** MODIFIED FUNCTION ***
-    private fun startProjectGenerationWorkflow() {
-        val appName = appNameInput.text.toString().trim()
+    private fun initiateWorkflow() {
+        val appName = appNameAutocomplete.text.toString().trim()
         val appDescription = appDescriptionInput.text.toString().trim()
         val apiKey = apiKeyInput.text.toString().trim()
 
+        var valid = true
         if (apiKey.isBlank()) {
-            handleError("Gemini API Key cannot be empty.")
             activity?.runOnUiThread { apiKeyInput.error = "API Key required" }
-            return
+            valid = false
+        } else {
+            activity?.runOnUiThread { apiKeyInput.error = null }
         }
         if (appName.isEmpty()) {
-            activity?.runOnUiThread { appNameInput.error = "App name is required" }
-            return
+            activity?.runOnUiThread { (appNameAutocomplete.parent.parent as? TextInputLayout)?.error = "App name is required" }
+            valid = false
+        } else {
+            activity?.runOnUiThread { (appNameAutocomplete.parent.parent as? TextInputLayout)?.error = null }
         }
         if (appDescription.isEmpty()) {
             activity?.runOnUiThread { appDescriptionInput.error = "App description is required" }
-            return
-        }
-
-        // Reset errors
-        activity?.runOnUiThread {
-            appNameInput.error = null
-            appDescriptionInput.error = null
-            apiKeyInput.error = null
-        }
-
-        logOutput.text?.clear()
-        conversation.clear()
-        selectedFilesForModification.clear()
-
-        val projectDir = File(projectsBaseDir, appName)
-        currentProjectDir = projectDir // Set currentProjectDir universally
-
-        if (projectDir.exists() && projectDir.isDirectory) {
-            // Project exists, so we are modifying
-            isModifyingExistingProject = true
-            appendToLog("Starting modification workflow for existing project: $appName\nUsing Model: ${geminiHelper.currentModelIdentifier}\nDescription: $appDescription\n")
-            // Set state before starting thread if needed, or directly in thread.
-            // For this step, we can set it before going into the thread for startFileSelection
-            setState(WorkflowState.MODIFYING_EXISTING_PROJECT) // Or use a generic "PROCESSING" state
-            thread {
-                try {
-                    startFileSelectionForModification(appName, appDescription, projectDir)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error during existing project modification workflow", e)
-                    handleError("Workflow failed for existing project: ${e.message}")
-                }
-            }
-        } else if (projectDir.exists() && !projectDir.isDirectory) {
-            // A file exists with this name, not a directory. This is an error.
-            activity?.runOnUiThread { appNameInput.error = "A file with this name already exists. Choose a different app name."}
-            return
-        }
-        else {
-            // Project does not exist, so we are creating a new one
-            isModifyingExistingProject = false
-            setState(WorkflowState.CREATING_PROJECT)
-            appendToLog("Starting workflow for new project: $appName\nUsing Model: ${geminiHelper.currentModelIdentifier}\nDescription: $appDescription\n")
-            thread {
-                try {
-                    val createdProjectDir = createProjectFromTemplate(appName)
-                    currentProjectDir = createdProjectDir // Update in case createProjectFromTemplate changes it (though it shouldn't with current logic)
-                    startFileSelectionForModification(appName, appDescription, createdProjectDir)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error during project creation/initial configuration", e)
-                    handleError("Workflow failed during project creation: ${e.message}")
-                }
-            }
-        }
-    }
-    // *** END OF MODIFIED FUNCTION ***
-
-
-    private fun createProjectFromTemplate(appName: String): File {
-        val packageName = createPackageName(appName)
-        // currentProjectDir is already set before calling this for new projects
-        val projectDir = currentProjectDir!! // Should not be null here for new projects
-        appendToLog("Step 1: Creating project '$appName' using Basic Activity template...\n")
-        appendToLog("Package Name: $packageName\nSave Location: ${projectDir.absolutePath}\nLanguage: Kotlin, Min SDK: 21\n")
-        val projectDetails = NewProjectDetails().apply {
-            this.name = appName; this.packageName = packageName; this.minSdk = 21
-            this.targetSdk = 34; this.language = "kotlin"; this.savePath = projectsBaseDir.absolutePath
-        }
-        val template = basicActivityProject()
-        template.setupParametersFromDetails(projectDetails)
-        val executor = TemplateRecipeExecutor()
-        val result = template.recipe.execute(executor)
-        if (result is ProjectTemplateRecipeResult) {
-            appendToLog("✅ Project template created successfully at ${result.data.projectDir.absolutePath}\n")
-            return result.data.projectDir
+            valid = false
         } else {
-            throw IOException("Template execution failed. Result: $result")
+            activity?.runOnUiThread { appDescriptionInput.error = null }
         }
-    }
-
-    // *** MODIFIED FUNCTION (minor log change) ***
-    private fun startFileSelectionForModification(appName: String, appDescription: String, projectDir: File) {
-        // Determine state based on whether it was a new creation or modification
-        val nextState = if (isModifyingExistingProject) WorkflowState.SELECTING_FILES else WorkflowState.SELECTING_FILES
-        // If CREATING_PROJECT was set, it will transition to SELECTING_FILES here.
-        // If MODIFYING_EXISTING_PROJECT was set, it also transitions to SELECTING_FILES.
-        setState(nextState)
-
-        val actionTypeLog = if (isModifyingExistingProject) "modifying existing project" else "newly created project"
-        appendToLog("Step 2: Identifying files to modify/create for $actionTypeLog '$appName'...\n")
-
-        val files = ProjectFileUtils.scanProjectFiles(projectDir)
-        activity?.runOnUiThread {
-            if (files.isEmpty() && !isModifyingExistingProject) { // If new project and no files, that's an issue
-                handleError("No code files found in the newly created project template. Cannot proceed with AI modification.")
-                return@runOnUiThread
-            } else if (files.isEmpty() && isModifyingExistingProject) {
-                appendToLog("No existing code files found by scanner in '$appName'. AI will be prompted to create necessary files from scratch based on description.\n")
-            } else {
-                appendToLog("Found ${files.size} potentially relevant files in the project.\n")
-            }
-            sendFileSelectionPrompt(appName, appDescription, files, projectDir)
-        }
-    }
-    // *** END OF MODIFIED FUNCTION ***
-
-    // *** MODIFIED FUNCTION (Prompt adjustment) ***
-    private fun sendFileSelectionPrompt(appName: String, appDescription: String, files: List<String>, projectDir: File) {
-        val fileListText = if (files.isNotEmpty()) {
-            files.joinToString("\n") { "- $it" }
-        } else {
-            "No existing editable files were found in this project. You might need to create all necessary files from scratch."
-        }
-
-        val promptContext = if (isModifyingExistingProject) "modifying an existing Android app" else "working with a basic Android app template I just created"
-        val actionVerb = if (isModifyingExistingProject) "MODIFY or CREATE" else "CREATED or significantly MODIFIED"
-
-
-        val prompt = """
-            I am $promptContext called "$appName".
-            The main goal for this app is: "$appDescription"
-
-            Here is a list of potentially relevant files from the project (or a note if empty):
-            $fileListText
-
-            Based ONLY on the app's main goal and the file list (if any), which of these files would MOST LIKELY need to be $actionVerb?
-            If the file list is empty or the existing files are not relevant to the goal, list the NEW files that would be essential to create to achieve the goal.
-            Focus on the core essentials (e.g., main Activities, primary Layout XMLs, key ViewModel/Logic classes if implied by the description, and build.gradle.kts files if new dependencies are clearly needed for the core goal).
-            Do not select files that are unlikely to change for a basic implementation of the goal if modifying an existing project.
-
-            Respond ONLY with a JSON array of the relative file paths.
-            Example: ["app/src/main/java/com/example/myapp/MainActivity.kt", "app/src/main/res/layout/activity_main.xml", "app/src/main/java/com/example/myapp/MyNewLogic.kt"]
-            Provide no explanation, just the JSON array.
-        """.trimIndent()
-
-        conversation.addUserMessage(prompt)
-        appendToLog("Asking AI to select relevant files (existing or new)...\n")
-        geminiHelper.sendGeminiRequest(conversation.getContents(),
-            callback = { response ->
-                try {
-                    val responseText = geminiHelper.extractTextFromGeminiResponse(response)
-                    appendToLog("AI file selection response received.\n")
-                    val jsonArrayText = geminiHelper.extractJsonArrayFromText(responseText)
-                    val jsonArray = JSONArray(jsonArrayText)
-                    selectedFilesForModification.clear()
-                    for (i in 0 until jsonArray.length()) {
-                        selectedFilesForModification.add(jsonArray.getString(i))
-                    }
-                    conversation.addModelMessage(responseText)
-                    if (selectedFilesForModification.isEmpty()) {
-                        appendToLog("⚠️ AI did not select/suggest any files for modification/creation. Project will remain as is.\n")
-                        setState(WorkflowState.READY_FOR_ACTION)
-                    } else {
-                        appendToLog("Selected/Suggested ${selectedFilesForModification.size} files for modification/creation:\n${selectedFilesForModification.joinToString("") { "  - $it\n" }}")
-                        loadSelectedFileContentsAndGenerate(appName, appDescription, projectDir)
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to parse file selection response.", e)
-                    handleError("Failed to parse AI's file selection: ${e.message}. See device log for details.")
-                }
-            }
-        )
-    }
-    // *** END OF MODIFIED FUNCTION ***
-
-
-    private fun loadSelectedFileContentsAndGenerate(appName: String, appDescription: String, projectDir: File) {
-        setState(WorkflowState.GENERATING_CODE)
-        appendToLog("Step 3: Loading selected files and preparing for code generation...\n")
-        val fileContents = mutableMapOf<String, String>()
-        val missingFiles = mutableListOf<String>()
-
-        for (filePath in selectedFilesForModification) {
-            val file = File(projectDir, filePath)
-            if (!file.exists() || !file.isFile) {
-                appendToLog("Note: File '$filePath' does not exist. Will request AI to create it.\n")
-                missingFiles.add(filePath)
-                fileContents[filePath] = "// File: $filePath (This file does not exist yet. Please provide its complete content based on the app description.)"
-            } else {
-                try {
-                    val content = FileReader(file).use { it.readText() }
-                    fileContents[filePath] = content
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error reading file $filePath", e)
-                    appendToLog("⚠️ Error reading file $filePath: ${e.message}. Will request AI to recreate or modify.\n")
-                    missingFiles.add(filePath)
-                    fileContents[filePath] = "// File: $filePath (Error reading existing content. Please provide its complete content based on the app description.)"
-                }
-            }
-        }
-
-        if (fileContents.isEmpty() && missingFiles.isEmpty() && selectedFilesForModification.isNotEmpty()) {
-            handleError("Could not read or identify any of the selected files for modification.")
+        if (!valid) {
+            // Do not call handleError, as it sets state to ERROR.
+            // Just return and let the field errors guide the user.
+            Toast.makeText(context, "Please fill all required fields.", Toast.LENGTH_SHORT).show()
             return
         }
-        appendToLog("Loaded/identified ${fileContents.size} files for AI processing.\n")
-        sendCodeGenerationPrompt(appName, appDescription, fileContents, missingFiles, projectDir)
-    }
 
-    // *** MODIFIED FUNCTION (Prompt adjustment) ***
-    private fun sendCodeGenerationPrompt(
-        appName: String,
-        appDescription: String,
-        fileContents: Map<String, String>,
-        missingFiles: List<String>,
-        projectDir: File // Keep projectDir for context, though not strictly needed for package name here if modifying
-    ) {
-        val filesContentText = buildString {
-            fileContents.forEach { (path, content) ->
-                append("FILE: $path\n```\n$content\n```\n\n")
-            }
+        logOutput.text = null
+        currentProjectDir = File(projectsBaseDir, appName)
+
+        // The isModifyingExistingProject flag should be accurately set by the AutoCompleteTextView's listeners
+        // We do a final check here based on disk state to be robust
+        val actualProjectExistsAndIsDir = projectOperationsHandler.projectExists(appName)
+
+        if (isModifyingExistingProject && !actualProjectExistsAndIsDir) {
+            Log.w(TAG, "UI flag indicated existing project, but '$appName' not found on disk or not a directory. Treating as new project attempt.")
+            isModifyingExistingProject = false // Correct the flag
+            // Potentially show a toast or log that the selected existing project was not found, and it will try to create new
+        } else if (!isModifyingExistingProject && actualProjectExistsAndIsDir) {
+            Log.w(TAG, "UI flag indicated new project, but '$appName' already exists on disk. Treating as modification attempt.")
+            isModifyingExistingProject = true // Correct the flag
         }
-        val creationNote = if (missingFiles.isNotEmpty()) {
-            "The following files were identified as needing creation or were unreadable; please provide their full content:\n" +
-                    missingFiles.joinToString("\n") { "- $it" } + "\n\n"
-        } else ""
+        // If isModifyingExistingProject is true, currentProjectDir is the existing one.
+        // If isModifyingExistingProject is false, currentProjectDir is the target for the new one.
 
-        // Determine package name context for the LLM
-        val packageNameInstruction: String
+        updateUiForState() // Refresh button text based on final decision
+
         if (isModifyingExistingProject) {
-            // Try to infer package from a common file, or provide a general instruction
-            val mainActivityPath = selectedFilesForModification.find { it.endsWith("MainActivity.kt") } ?: selectedFilesForModification.firstOrNull { it.endsWith(".kt") }
-            var inferredPackageName = "com.example.unknown" // Default fallback
-            if (mainActivityPath != null) {
-                val mainActivityFile = File(projectDir, mainActivityPath)
-                if (mainActivityFile.exists()) {
-                    try {
-                        val content = FileReader(mainActivityFile).use { it.readText() }
-                        val packageRegex = Regex("""^\s*package\s+([a-zA-Z0-9_.]+)""")
-                        packageRegex.find(content)?.groupValues?.get(1)?.let {
-                            inferredPackageName = it
-                        }
-                    } catch (e: Exception) { Log.w(TAG, "Could not infer package name from $mainActivityPath", e) }
-                }
+            appendToLog("Preparing to modify existing project: $appName\n")
+            setState(WorkflowState.PREPARING_EXISTING_PROJECT)
+            geminiWorkflowCoordinator.startModificationFlow(appName, appDescription, currentProjectDir!!)
+        } else { // New project
+            // We need to ensure it doesn't exist as a file if it's a new project name.
+            if (currentProjectDir!!.exists() && !currentProjectDir!!.isDirectory) {
+                activity?.runOnUiThread { (appNameAutocomplete.parent.parent as? TextInputLayout)?.error = "A file (not project) exists with this name." }
+                handleError("Cannot create project. A file already exists with the name '$appName'.", null)
+                return
             }
-            packageNameInstruction = "If creating new Kotlin/Java files, try to place them in an appropriate existing package (e.g., derived from '$inferredPackageName' or similar structure found in other files) or a new sub-package if logical."
-        } else {
-            val localSanitizedAppName = appName.filter { it.isLetterOrDigit() }.lowercase(Locale.getDefault()).ifEmpty { "myapp" }
-            packageNameInstruction = "Pay attention to package names if creating new Kotlin/Java files (e.g., `com.example.$localSanitizedAppName`)."
+            // If currentProjectDir exists and IS a directory, it means isModifyingExistingProject should have been true.
+            // This case is handled above by correcting isModifyingExistingProject.
+            // If it doesn't exist, we are good to create.
+
+            appendToLog("Starting new project creation: $appName\n")
+            setState(WorkflowState.CREATING_PROJECT_TEMPLATE)
+            projectOperationsHandler.createNewProjectFromTemplate(appName) { createdDir ->
+                currentProjectDir = createdDir
+                geminiWorkflowCoordinator.startModificationFlow(appName, appDescription, createdDir)
+            }
         }
-
-
-        val prompt = """
-            You are an expert Android App Developer. Your task is to modify or create files for an Android app named "$appName".
-            The primary goal of this app is: "$appDescription"
-
-            $creationNote Important: For any file you provide content for, ensure it is the *complete and valid* content for that file (e.g., full Kotlin class, complete XML layout, entire Gradle script section).
-
-            Current file contents (or placeholders for new/unreadable files):
-            $filesContentText
-
-            Instructions:
-            1. Review the app description and the provided file contents/placeholders.
-            2. For each file listed (whether existing or to be created), provide its FULL, UPDATED, and VALID content to achieve the app's goal.
-            3. If new dependencies are clearly implied by the app description (e.g., "needs to show images from the internet" might imply Coil or Glide), add them to the appropriate `build.gradle.kts` file (usually `app/build.gradle.kts`). Ensure to add them in the `dependencies { ... }` block.
-            4. Ensure all Kotlin code is idiomatic and XML layouts are well-formed.
-            5. $packageNameInstruction
-            6. Only output content for files that actually need changes or creation. If a file from the input list is fine as-is or not relevant to the core goal, do not include it in your response.
-
-            Format your response STRICTLY as follows, with each modified/created file block:
-            FILE: path/to/file.ext
-            ```[optional language hint like kotlin, xml, groovy]
-            // Complete file content with all necessary modifications or new content
-            ```
-            (Repeat for each file that needs to be changed or created)
-        """.trimIndent()
-
-        conversation.addUserMessage(prompt)
-        appendToLog("Sending file contents to AI for code generation...\n")
-        geminiHelper.sendGeminiRequest(conversation.getContents(),
-            callback = { response ->
-                try {
-                    val responseText = geminiHelper.extractTextFromGeminiResponse(response)
-                    conversation.addModelMessage(responseText)
-                    appendToLog("AI responded with code modifications.\n")
-                    processCodeChanges(responseText, currentProjectDir!!) // Use currentProjectDir which is set
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed during code generation response.", e)
-                    handleError("Failed during AI code generation response: ${e.message}. See device log for details.")
-                }
-            }
-        )
     }
-    // *** END OF MODIFIED FUNCTION ***
 
-    private fun processCodeChanges(responseText: String, projectDir: File) {
-        appendToLog("Step 4: Applying code changes...\n")
-        val fileChanges = geminiHelper.parseFileChanges(responseText, ::appendToLog)
-        if (fileChanges.isEmpty()) {
-            appendToLog("⚠️ AI did not provide any recognizable file changes in the correct format. Project remains largely as is.\n")
-            setState(WorkflowState.READY_FOR_ACTION)
-            return
-        }
-        ProjectFileUtils.processFileChanges(projectDir, fileChanges, ::appendToLog) { successCount, errorCount ->
-            if (errorCount > 0) {
-                appendToLog("⚠️ Some files failed to update during the process.\n")
-            }
-            if (successCount > 0) {
-                appendToLog("✅ Successfully applied $successCount file changes.\n")
-            }
-            setState(WorkflowState.READY_FOR_ACTION)
-        }
+    // Callback from ProjectOperationsHandler
+    internal fun onTemplateProjectCreated(projectDir: File, appName: String, appDescription: String) {
+        currentProjectDir = projectDir // Should already be set by the callback from createNewProject...
+        appendToLog("✅ Base project created at ${projectDir.absolutePath}\n")
+        // GeminiWorkflowCoordinator.startModificationFlow was already called in the callback of createNewProjectFromTemplate
     }
 
     internal fun setState(newState: WorkflowState) {
-        if (currentState == newState) return
+        if (currentState == newState && newState != WorkflowState.READY_FOR_ACTION) return
         currentState = newState
         Log.d(TAG, "State changed to: $newState")
         activity?.runOnUiThread { updateUiForState() }
     }
 
-    // *** MODIFIED FUNCTION (UI update for button text) ***
     private fun updateUiForState() {
-        val isLoading = currentState in listOf(
-            WorkflowState.CREATING_PROJECT,
-            WorkflowState.MODIFYING_EXISTING_PROJECT, // Added
-            WorkflowState.SELECTING_FILES,
-            WorkflowState.GENERATING_CODE
-        )
+        val isLoading = currentState !in listOf(WorkflowState.IDLE, WorkflowState.READY_FOR_ACTION, WorkflowState.ERROR)
         loadingIndicator.visibility = if (isLoading) View.VISIBLE else View.GONE
-        generateButton.isEnabled = currentState in listOf(WorkflowState.IDLE, WorkflowState.READY_FOR_ACTION, WorkflowState.ERROR)
+        generateButton.isEnabled = !isLoading
         actionButtonsLayout.visibility = if (currentState == WorkflowState.READY_FOR_ACTION) View.VISIBLE else View.GONE
         continueButton.isEnabled = currentState == WorkflowState.READY_FOR_ACTION
-        continueButton.text = getString(R.string.action_continue_to_build) // Assuming R.string.action_continue_to_build exists
         modifyFurtherButton.isEnabled = currentState == WorkflowState.READY_FOR_ACTION
 
-        val editableState = currentState in listOf(WorkflowState.IDLE, WorkflowState.READY_FOR_ACTION, WorkflowState.ERROR)
-        appNameInput.isEnabled = editableState
-        appDescriptionInput.isEnabled = editableState
-        apiKeyInput.isEnabled = editableState
-        modelSpinner.isEnabled = editableState
-
-        val isCustomModelSelected = if (modelSpinner.adapter != null && modelSpinner.adapter.count > 0) {
-            modelSpinner.selectedItemPosition == modelSpinner.adapter.count - 1
-        } else { false }
-        customModelInput.isEnabled = isCustomModelSelected && editableState
-        customModelInputLayout.isEnabled = customModelInput.isEnabled
+        val editableInputs = currentState == WorkflowState.IDLE || currentState == WorkflowState.ERROR || currentState == WorkflowState.READY_FOR_ACTION
+        appNameAutocomplete.isEnabled = editableInputs
+        appDescriptionInput.isEnabled = editableInputs
+        apiKeyInput.isEnabled = editableInputs
+        modelSpinner.isEnabled = editableInputs
+        customModelInputLayout.isEnabled = editableInputs && modelSpinner.selectedItemPosition == modelSpinner.adapter.count -1
+        customModelInput.isEnabled = customModelInputLayout.isEnabled
 
         statusText.text = when (currentState) {
-            WorkflowState.IDLE -> "Ready to generate or modify" // Changed
-            WorkflowState.CREATING_PROJECT -> "Creating base project..."
-            WorkflowState.MODIFYING_EXISTING_PROJECT -> "Preparing to modify existing project..." // Added
+            WorkflowState.IDLE -> "Ready to generate or modify"
+            WorkflowState.CREATING_PROJECT_TEMPLATE -> "Creating base project template..."
+            WorkflowState.PREPARING_EXISTING_PROJECT -> "Preparing to modify existing project..."
             WorkflowState.SELECTING_FILES -> "AI is selecting files..."
             WorkflowState.GENERATING_CODE -> "AI is generating code..."
             WorkflowState.READY_FOR_ACTION -> {
+                // This uses the isModifyingExistingProject flag that was set at the *start* of the successful workflow
                 if (isModifyingExistingProject) "Project modified. Ready to open or re-modify."
-                else "Project created. Ready to open or regenerate."
+                else "New project generated. Ready to open or regenerate."
             }
-            WorkflowState.ERROR -> "Error occurred (see log above)"
+            WorkflowState.ERROR -> "Error occurred (see log)"
         }
 
-        // Determine current app name to check if it's an existing project for button text logic
-        // This is a simplified check based on if isModifyingExistingProject was set during startProjectGenerationWorkflow
-        // A more robust check might involve re-evaluating appNameInput.text against known projects if needed here.
-        val appNameToCheck = appNameInput.text.toString().trim()
-        val isActuallyModifying = isModifyingExistingProject && File(projectsBaseDir, appNameToCheck).exists()
-
+        // For button text, check the current value of the AutoCompleteTextView
+        // to reflect intent for the *next* operation when IDLE/ERROR/READY.
+        val currentAppNameText = appNameAutocomplete.text.toString().trim()
+        val currentInputSuggestsExisting = currentAppNameText.isNotEmpty() && existingProjectNames.contains(currentAppNameText)
 
         generateButton.text = when {
-            currentState == WorkflowState.READY_FOR_ACTION && isActuallyModifying -> "Re-Modify Existing App"
-            currentState == WorkflowState.READY_FOR_ACTION && !isActuallyModifying -> "Regenerate New App"
             currentState == WorkflowState.ERROR -> "Retry"
-            isActuallyModifying -> "Modify Existing App" // if IDLE and app name is existing
-            else -> "Generate New App" // if IDLE and app name is new
+            currentState == WorkflowState.READY_FOR_ACTION -> {
+                // After a workflow, use the flag that determined that workflow
+                if (isModifyingExistingProject) "Re-Modify Existing" else "Regenerate New"
+            }
+            // When IDLE, base button text on current input
+            currentInputSuggestsExisting -> "Modify Existing App"
+            else -> "Generate New App"
         }
     }
-    // *** END OF MODIFIED FUNCTION ***
 
     internal fun appendToLog(text: String) {
         activity?.runOnUiThread {
             logOutput.append(text)
-            try {
-                val layout = logOutput.layout
-                if (layout != null) {
-                    val scrollAmount = layout.getLineTop(logOutput.lineCount) - logOutput.height
-                    logOutput.scrollTo(0, if (scrollAmount > 0) scrollAmount else 0)
-                } else {
-                    logOutput.scrollTo(0, 0)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error auto-scrolling log output", e)
+            logOutput.layout?.let { layout ->
+                val scrollAmount = layout.getLineTop(logOutput.lineCount) - logOutput.height
+                if (scrollAmount > 0) logOutput.scrollTo(0, scrollAmount)
+                else logOutput.scrollTo(0, 0)
             }
         }
     }
 
-    internal fun handleError(message: String) {
-        Log.e(TAG, "Error: $message")
-        activity?.runOnUiThread {
-            // Reset isModifyingExistingProject on error so next attempt is fresh
-            isModifyingExistingProject = false
-            setState(WorkflowState.ERROR)
-            appendToLog("❌ ERROR: $message\n")
+    internal fun handleError(message: String, e: Exception? = null) {
+        if (e != null) {
+            Log.e(TAG, message, e)
+        } else {
+            Log.e(TAG, message)
         }
-    }
-
-    private fun createPackageName(appName: String): String {
-        val sanitizedName = appName.filter { it.isLetterOrDigit() }.lowercase(Locale.getDefault())
-        return "com.example.${sanitizedName.ifEmpty { "myapp" }}"
-    }
-
-    private fun com.itsaky.androidide.templates.Template<*>.setupParametersFromDetails(details: NewProjectDetails) {
-        val iterator = parameters.iterator()
-        try {
-            log.debug("Setting template parameter: name = ${details.name}")
-            (iterator.next() as? StringParameter)?.setValue(details.name)
-            log.debug("Setting template parameter: packageName = ${details.packageName}")
-            (iterator.next() as? StringParameter)?.setValue(details.packageName)
-            log.debug("Setting template parameter: savePath = ${details.savePath}")
-            (iterator.next() as? StringParameter)?.setValue(details.savePath)
-            val langEnum = if (details.language == "kotlin") Language.Kotlin else Language.Java
-            log.debug("Setting template parameter: language = $langEnum")
-            (iterator.next() as? EnumParameter<Language>)?.setValue(langEnum)
-            val sdkEnum = Sdk.values().find { it.api == details.minSdk } ?: Sdk.Lollipop
-            log.debug("Setting template parameter: minSdk = $sdkEnum (API ${details.minSdk})")
-            (iterator.next() as? EnumParameter<Sdk>)?.setValue(sdkEnum)
-            val useKtsValue = (langEnum == Language.Kotlin)
-            log.debug("Setting template parameter: useKts = $useKtsValue")
-            if (iterator.hasNext()) {
-                (iterator.next() as? BooleanParameter)?.setValue(useKtsValue)
-            } else {
-                log.warn("Template does not seem to have a 6th (useKts) parameter.")
-            }
-        } catch (e: NoSuchElementException) {
-            log.error("Error setting template parameters: Not enough parameters in the template.", e)
-            handleError("Internal error: Template parameter mismatch.")
-        } catch (e: Exception) {
-            log.error("Error setting template parameters", e)
-            handleError("Internal error setting template parameters: ${e.message}")
-        }
+        // Don't reset isModifyingExistingProject here, let the UI reflect the state
+        // that led to the error if it was mid-workflow for an existing project.
+        // It will be re-evaluated on the next initiateWorkflow.
+        setState(WorkflowState.ERROR)
+        appendToLog("❌ ERROR: $message\n")
     }
 
     companion object {
         const val TAG = "FileEditorDialog"
         private const val ARG_PROJECTS_BASE_DIR = "projects_base_dir"
-        private const val PREFS_NAME = "GeminiPrefs_AppCoder"
+        private const val PREFS_NAME = "GeminiPrefs_AppCoder" // Consistent name
         private const val KEY_API_KEY = "gemini_api_key"
         private const val KEY_GEMINI_MODEL = "gemini_selected_model"
 
         fun newInstance(projectsBaseDir: String): FileEditorDialog {
-            return FileEditorDialog().apply { arguments = bundleOf(ARG_PROJECTS_BASE_DIR to projectsBaseDir) }
+            return FileEditorDialog().apply {
+                arguments = bundleOf(ARG_PROJECTS_BASE_DIR to projectsBaseDir)
+            }
         }
     }
 }

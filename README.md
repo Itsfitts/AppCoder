@@ -23,9 +23,10 @@
         *   You might need to **enable "Install from unknown sources"** in your phone's settings.
     *   After AppCoder installs and completes its initial setup (grant permissions, wait for installation of all the dependencies):
         *   Tap the **🔵 blue plus (+) button**.
-        *   Enter an **App Name**, a **simple App Description** (keep it simple for now more complex apps will be possible in the future), paste your **Gemini API Key** and press "Generate & Modify App".
+        *   Enter an **App Name**, a **simple App Description** (keep it simple for now more complex apps will be possible in the future), paste your **Gemini API Key** and press "Generate App".
     *   After code generation by the LLM, press **continue to build**.
     *   When installing your *generated app*, you might need to **expand the installation popup to find and select "Install anyway"**.
+    *   When you have build your first app and tested its functionality you might want to modify it. You can do that the same way you created the new app but instead of choosing a new app name you search for the existing one you want to modefy. **!Attention! Currently this overrides the existing app and might break it, there is no "save previous version" feature implemented yet.** 
 
 ---
 

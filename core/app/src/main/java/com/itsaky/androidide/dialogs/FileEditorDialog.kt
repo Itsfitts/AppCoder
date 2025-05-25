@@ -27,15 +27,7 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.itsaky.androidide.R // Make sure this R is correct for your module
 import com.itsaky.androidide.activities.MainActivity
-// Import your helper classes if they are in the same package,
-// otherwise use full package names or add proper imports.
-// Assuming ProjectOperationsHandler and GeminiWorkflowCoordinator are in this package:
-// import com.itsaky.androidide.dialogs.ProjectOperationsHandler
-// import com.itsaky.androidide.dialogs.GeminiWorkflowCoordinator
-// Assuming GeminiHelper is also correctly imported/accessible
-// import com.itsaky.androidide.dialogs.DEFAULT_GEMINI_MODEL (from GeminiHelper.kt)
 import java.io.File
-import kotlin.concurrent.thread
 
 class FileEditorDialog : DialogFragment() {
 

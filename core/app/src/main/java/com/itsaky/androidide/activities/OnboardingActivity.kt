@@ -37,6 +37,8 @@ import com.itsaky.androidide.fragments.onboarding.PermissionsFragment
 import com.itsaky.androidide.models.JdkDistribution
 // Removed StatPreferences import
 import com.itsaky.androidide.preferences.internal.prefManager
+import com.itsaky.androidide.services.builder.GradleBuildService
+import com.itsaky.androidide.services.builder.GradleBuildServiceConnnection
 import com.itsaky.androidide.tasks.launchAsyncWithProgress
 import com.itsaky.androidide.ui.themes.IThemeManager
 import com.itsaky.androidide.utils.Environment

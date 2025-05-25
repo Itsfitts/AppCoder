@@ -1,13 +1,18 @@
-package com.itsaky.androidide.dialogs
+package com.itsaky.androidide.dialogs // Assuming it's in the same package, adjust if it's in 'utils'
 
+import android.util.Log
 import java.io.File
 import java.io.FileWriter
+import java.io.IOException
 
 object ProjectFileUtils {
+
+    private const val TAG = "ProjectFileUtils"
 
     fun scanProjectFiles(projectRoot: File): List<String> {
         val result = mutableListOf<String>()
         if (!projectRoot.exists() || !projectRoot.isDirectory) {
+            Log.w(TAG, "scanProjectFiles: Project root directory does not exist or is not a directory: ${projectRoot.absolutePath}")
             return result
         }
         collectFilePaths(projectRoot, projectRoot, result)
@@ -36,35 +41,94 @@ object ProjectFileUtils {
         return codeExtensions.any { filename.lowercase().endsWith(it) }
     }
 
-    fun processFileChanges(
+    fun processFileChangesAndDeletions(
         projectDir: File,
-        fileChanges: Map<String, String>,
+        filesToWrite: Map<String, String>,
+        filesToDelete: List<String>,
         logAppender: (String) -> Unit,
-        onComplete: (successCount: Int, errorCount: Int) -> Unit
+        onComplete: (writeSuccessCount: Int, writeErrorCount: Int, deleteSuccessCount: Int, deleteErrorCount: Int) -> Unit
     ) {
-        logAppender("Applying changes to ${fileChanges.size} files...\n")
-        var successCount = 0
-        var errorCount = 0
+        var writeSuccess = 0
+        var writeError = 0
+        var deleteSuccess = 0
+        var deleteError = 0
 
-        for ((filePath, content) in fileChanges) {
-            try {
-                val file = File(projectDir, filePath)
-                file.parentFile?.mkdirs() // Ensure directories exist
-                FileWriter(file).use { it.write(content) }
-                logAppender("✅ Updated: $filePath\n")
-                successCount++
-            } catch (e: Exception) {
-                logAppender("❌ Failed to write $filePath: ${e.message}\n")
-                errorCount++
+        logAppender("--- Starting File System Operations ---\n")
+
+        // --- Deletion Phase ---
+        if (filesToDelete.isNotEmpty()) {
+            logAppender("Deletion Phase: Attempting to delete ${filesToDelete.size} file(s).\n")
+            filesToDelete.forEach { relativePath ->
+                if (relativePath.isBlank()) {
+                    logAppender("⚠️ Attempted to delete a file with a blank path. Skipping.\n")
+                    return@forEach
+                }
+                val file = File(projectDir, relativePath)
+                if (file.exists()) {
+                    try {
+                        if (file.isFile) {
+                            if (file.delete()) {
+                                logAppender("✅ Deleted file: $relativePath\n")
+                                deleteSuccess++
+                            } else {
+                                logAppender("⚠️ Failed to delete file (unknown reason, check permissions): $relativePath\n")
+                                deleteError++
+                            }
+                        } else if (file.isDirectory) {
+                            logAppender("⚠️ Path for deletion is a directory. Manual deletion required or update logic for recursive delete: $relativePath\n")
+                            deleteError++
+                        }
+                    } catch (e: SecurityException) {
+                        logAppender("⚠️ Security error deleting $relativePath: ${e.message}\n")
+                        deleteError++
+                    } catch (e: Exception) {
+                        logAppender("⚠️ Unexpected error deleting $relativePath: ${e.message}\n")
+                        deleteError++
+                    }
+                } else {
+                    logAppender("ℹ️ File for deletion not found (already deleted or wrong path?): $relativePath\n")
+                }
             }
+            logAppender("Deletion Phase complete. Success: $deleteSuccess, Errors: $deleteError.\n")
+        } else {
+            logAppender("Deletion Phase: No files specified for deletion.\n")
         }
 
-        if (errorCount > 0) {
-            logAppender("⚠️ Some files failed to update.\n")
+        // --- Writing Phase ---
+        if (filesToWrite.isNotEmpty()) {
+            logAppender("Writing Phase: Attempting to write/update ${filesToWrite.size} file(s).\n")
+            filesToWrite.forEach { (relativePath, content) ->
+                if (relativePath.isBlank()) {
+                    logAppender("⚠️ Attempted to write a file with a blank path. Skipping.\n")
+                    return@forEach
+                }
+                val file = File(projectDir, relativePath)
+                try {
+                    file.parentFile?.mkdirs()
+                    FileWriter(file).use { it.write(content) }
+                    logAppender("✅ Updated/Created file: $relativePath\n")
+                    writeSuccess++
+                } catch (e: IOException) { // Catch specific IOException from FileWriter
+                    // CORRECTED HERE:
+                    logAppender("❌ IO Failed to write $relativePath: ${e.message}\n")
+                    writeError++
+                } catch (e: SecurityException) {
+                    // CORRECTED HERE:
+                    logAppender("❌ Security exception writing $relativePath: ${e.message}\n")
+                    writeError++
+                }
+                catch (e: Exception) { // Broader catch for other unexpected issues
+                    // CORRECTED HERE:
+                    logAppender("❌ Failed to write $relativePath (Unexpected Error): ${e.message}\n")
+                    writeError++
+                }
+            }
+            logAppender("Writing Phase complete. Success: $writeSuccess, Errors: $writeError.\n")
+        } else {
+            logAppender("Writing Phase: No files specified for writing/updating.\n")
         }
-        if (successCount > 0) {
-             logAppender("✅ Code modification phase complete.\n")
-        }
-        onComplete(successCount, errorCount)
+
+        logAppender("--- File System Operations Complete ---\n")
+        onComplete(writeSuccess, writeError, deleteSuccess, deleteError)
     }
 }

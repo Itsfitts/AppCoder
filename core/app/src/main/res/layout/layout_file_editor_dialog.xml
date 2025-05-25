@@ -154,12 +154,17 @@
                 android:layout_height="120dp"
                 android:inputType="textMultiLine"
                 android:minLines="5"
-                android:maxLines="10"
                 android:gravity="top|start"
-                android:focusable="false"
-                android:clickable="false"
-                android:focusableInTouchMode="false"
-                android:scrollbars="vertical"/>
+                android:scrollbars="vertical"
+                android:textAppearance="?attr/textAppearanceBody2"
+
+                android:focusable="true"
+                android:focusableInTouchMode="true"
+                android:clickable="true"
+                android:longClickable="true"
+                android:textIsSelectable="true"
+                />
+            <!-- Consider removing android:maxLines if very long logs don't scroll well -->
         </com.google.android.material.textfield.TextInputLayout>
 
         <!-- Action Buttons -->

@@ -1,15 +1,24 @@
 package com.itsaky.androidide.dialogs
 
 import android.util.Log
-import org.json.JSONArray
-import org.json.JSONObject // Ensure JSONObject is imported
+import org.json.JSONArray // Keep this for parsing file selection, might be needed if deletion also uses JSON
+import org.json.JSONException // For handling JSON parsing errors
 import java.io.File
 import java.io.FileReader
 import java.io.IOException
 import java.util.Locale
 
+// Assume FileModifications is defined in GeminiHelper or a shared model file
+// If not, you can define it here or import it from where GeminiHelper.parseFileChanges can access it.
+// For this example, let's assume it's accessible (e.g., defined in GeminiHelper.kt)
+// data class FileModifications(
+//    val filesToWrite: Map<String, String>,
+//    val filesToDelete: List<String>
+// )
+
+
 class GeminiWorkflowCoordinator(
-    private val geminiHelper: GeminiHelper,
+    private val geminiHelper: GeminiHelper, // Assumes GeminiHelper is updated
     private val logAppender: (String) -> Unit,
     private val errorHandler: (String, Exception?) -> Unit,
     private val dialogInterface: FileEditorDialog // To update state
@@ -77,14 +86,13 @@ class GeminiWorkflowCoordinator(
         conversation.addUserMessage(prompt)
         logAppender("Asking AI to select relevant files...\n")
 
-        // *** FIXED CALL ***
         geminiHelper.sendGeminiRequest(
             contents = conversation.getContents(),
-            callback = { response -> // Explicitly name the callback parameter
+            callback = { response ->
                 try {
                     val responseText = geminiHelper.extractTextFromGeminiResponse(response)
                     logAppender("AI file selection response received.\n")
-                    val jsonArrayText = geminiHelper.extractJsonArrayFromText(responseText)
+                    val jsonArrayText = geminiHelper.extractJsonArrayFromText(responseText) // Assumes this can still be used or adapted
                     val jsonArray = JSONArray(jsonArrayText)
                     selectedFilesForModification.clear()
                     for (i in 0 until jsonArray.length()) {
@@ -101,7 +109,11 @@ class GeminiWorkflowCoordinator(
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to parse file selection response from Gemini.", e)
-                    errorHandler("Failed to parse AI's file selection: ${e.message}. Check Logcat for Gemini's raw response.", e)
+                    var errorMessage = "Failed to parse AI's file selection: ${e.message}."
+                    if (e is JSONException) {
+                        errorMessage += " Often this is due to the AI not providing a valid JSON array for file selection."
+                    }
+                    errorHandler("$errorMessage Check Logcat for Gemini's raw response.", e)
                 }
             }
         )
@@ -134,6 +146,7 @@ class GeminiWorkflowCoordinator(
         if (fileContents.isEmpty() && selectedFilesForModification.isNotEmpty()) {
             logAppender("All selected files are new or were unreadable. AI will generate content from scratch for them.\n")
         } else if (fileContents.isEmpty() && selectedFilesForModification.isEmpty()) {
+            // This case should ideally be caught by the check in sendGeminiFileSelectionPrompt callback
             errorHandler("No files selected or loaded for code generation.", null)
             return
         }
@@ -147,7 +160,7 @@ class GeminiWorkflowCoordinator(
         appDescription: String,
         fileContentsMap: Map<String, String>,
         missingFilesList: List<String>,
-        projectDir: File
+        projectDir: File // Keep for context if needed, though not directly used in this version of prompt logic
     ) {
         val filesContentText = buildString {
             fileContentsMap.forEach { (path, content) ->
@@ -194,31 +207,42 @@ class GeminiWorkflowCoordinator(
 
             Instructions:
             1. Review the app description and the provided file contents/placeholders.
-            2. For each file listed, provide its FULL, UPDATED, and VALID content to achieve the app's goal.
-            3. If new dependencies are implied by the app description, add them to the `app/build.gradle.kts` file in the `dependencies { ... }` block.
+            2. For each file listed (or new files you deem necessary based on the description), provide its FULL, UPDATED, and VALID content to achieve the app's goal.
+            3. If new dependencies are implied by the app description, add them to the `app/build.gradle.kts` (or `app/build.gradle`) file in the `dependencies { ... }` block.
             4. Ensure Kotlin code is idiomatic and XML layouts are well-formed.
             5. $packageNameInstruction
             6. Only output content for files that actually need changes or creation. If a file from the input list is fine as-is or not relevant to the core goal, do not include it in your response.
+            7. **VERY IMPORTANT**: If your changes (e.g., creating UI programmatically in Kotlin) make any existing files (especially XML layout files like `activity_main.xml`, `fragment_*.xml`, `item_*.xml`, etc.) obsolete, you MUST list their full project-relative paths for DELETION.
 
-            Format your response STRICTLY as follows, with each modified/created file block:
-            FILE: path/to/file.ext
-            ```[optional language hint like kotlin, xml, groovy]
-            // Complete file content
+            Format your response STRICTLY as follows:
+            Each modified/created file block must start with `FILE: path/to/file.ext` on a new line, followed by a fenced code block with the complete file content.
             ```
-            (Repeat for each file)
+            FILE: path/to/file.ext
+            `[optional language hint like kotlin, xml, groovy]`
+            // Complete file content
+            `
+            ```
+            (Repeat for each file to modify/create)
+
+            If there are files to delete, after all FILE blocks, add a block starting with `DELETE_FILES:` followed by a JSON array of strings, where each string is a project-relative path of a file to be deleted.
+            Example of DELETE_FILES block:
+            ```
+            DELETE_FILES: ["app/src/main/res/layout/old_layout_to_remove.xml", "app/src/main/java/com/example/myapp/OldHelper.kt"]
+            ```
+            If no files need to be deleted, OMIT the DELETE_FILES block entirely or provide an empty array `DELETE_FILES: []`.
         """.trimIndent()
 
         conversation.addUserMessage(prompt)
         logAppender("Sending file contents to AI for code generation...\n")
 
-        // *** FIXED CALL ***
         geminiHelper.sendGeminiRequest(
             contents = conversation.getContents(),
-            callback = { response -> // Explicitly name the callback parameter
+            callback = { response ->
                 try {
                     val responseText = geminiHelper.extractTextFromGeminiResponse(response)
-                    conversation.addModelMessage(responseText)
+                    conversation.addModelMessage(responseText) // Store raw response for context
                     logAppender("AI responded with code modifications.\n")
+                    // applyCodeChanges will now use GeminiHelper.parseFileChanges which returns FileModifications
                     applyCodeChanges(responseText, projectDir)
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed during Gemini code generation response processing.", e)
@@ -229,28 +253,49 @@ class GeminiWorkflowCoordinator(
     }
 
     private fun applyCodeChanges(responseText: String, projectDir: File) {
-        logAppender("Gemini Workflow Step: Applying code changes...\n")
-        val fileChanges = geminiHelper.parseFileChanges(responseText, logAppender)
+        logAppender("Gemini Workflow Step: Applying code changes and deletions...\n")
 
-        if (fileChanges.isEmpty()) {
-            logAppender("⚠️ AI did not provide any recognizable file changes in the correct format. Project may not be fully modified as intended.\n")
+        // This is the critical change:
+        // GeminiHelper.parseFileChanges is now expected to parse both FILE: blocks and DELETE_FILES: block
+        // and return a FileModifications object (or similar structure).
+        val modifications = geminiHelper.parseFileChanges(responseText, logAppender) // This method needs to be updated in GeminiHelper.kt
+
+        if (modifications.filesToWrite.isEmpty() && modifications.filesToDelete.isEmpty()) {
+            logAppender("⚠️ AI did not provide any recognizable file changes or deletions in the correct format. Project may not be fully modified as intended.\n")
             dialogInterface.setState(FileEditorDialog.WorkflowState.READY_FOR_ACTION)
             return
         }
 
-        ProjectFileUtils.processFileChanges(projectDir, fileChanges, logAppender) { successCount, errorCount ->
-            if (errorCount > 0) {
-                logAppender("⚠️ Some files failed to update during the process.\n")
+        // ProjectFileUtils.processFileChanges also needs to be updated to handle both lists.
+        // Let's assume it's renamed or refactored to something like processFileChangesAndDeletions
+        ProjectFileUtils.processFileChangesAndDeletions( // This method needs to be updated/created in ProjectFileUtils.kt
+            projectDir,
+            modifications.filesToWrite,
+            modifications.filesToDelete,
+            logAppender
+        ) { writeSuccessCount, writeErrorCount, deleteSuccessCount, deleteErrorCount ->
+            if (writeErrorCount > 0 || deleteErrorCount > 0) {
+                logAppender("⚠️ Some operations failed during the process. Writes (Error: $writeErrorCount), Deletes (Error: $deleteErrorCount).\n")
             }
-            if (successCount > 0) {
-                logAppender("✅ Successfully applied $successCount file changes.\n")
-            } else if (errorCount == 0) {
-                logAppender("No specific file changes were applied (perhaps AI deemed no changes necessary or format was not matched), but the process completed based on AI response.\n")
+            var changesApplied = false
+            if (writeSuccessCount > 0) {
+                logAppender("✅ Successfully applied $writeSuccessCount file content changes.\n")
+                changesApplied = true
+            }
+            if (deleteSuccessCount > 0) {
+                logAppender("✅ Successfully deleted $deleteSuccessCount files.\n")
+                changesApplied = true
+            }
+
+            if (!changesApplied && writeErrorCount == 0 && deleteErrorCount == 0) {
+                logAppender("No specific file changes or deletions were applied (perhaps AI deemed no changes necessary, format was not matched, or files to delete didn't exist). Process completed based on AI response.\n")
             }
             dialogInterface.setState(FileEditorDialog.WorkflowState.READY_FOR_ACTION)
         }
     }
 
+    // This property access assumes `FileEditorDialog` has a way to expose this,
+    // or you might pass this state differently.
     private val FileEditorDialog.isModifyingExistingProjectInternal: Boolean
-        get() = this.isModifyingExistingProject // Assumes isModifyingExistingProject is internal in FileEditorDialog
+        get() = this.isModifyingExistingProject
 }

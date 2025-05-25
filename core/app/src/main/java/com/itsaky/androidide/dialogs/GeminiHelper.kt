@@ -5,16 +5,24 @@ import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
+import org.json.JSONException // Added for parsing DELETE_FILES
 import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
+// --- Data Class for File Modifications ---
+data class FileModifications(
+    val filesToWrite: Map<String, String>, // Key: relative path, Value: content
+    val filesToDelete: List<String>       // List of relative paths to delete
+)
+
 // Define a default model - THIS IS THE PRIMARY SOURCE FOR THE DEFAULT
-const val DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-preview-05-20" // << YOUR DESIRED DEFAULT
+// UPDATED TO MATCH YOUR INTENDED DEFAULT FROM THE DIALOG'S DISPLAY NAME
+const val DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-preview-05-20"
 
 class GeminiHelper(
     private val apiKeyProvider: () -> String,
-    private val errorHandler: (String) -> Unit,
+    private val errorHandler: (String, Exception?) -> Unit,
     private val uiCallback: (block: () -> Unit) -> Unit
 ) {
     private val client = OkHttpClient.Builder()
@@ -23,11 +31,10 @@ class GeminiHelper(
         .writeTimeout(120, TimeUnit.SECONDS)
         .build()
 
-    private val defaultThinkingBudget = 0
+    private val defaultThinkingBudget = 24576
 
-    // This will be initialized with DEFAULT_GEMINI_MODEL by default
     var currentModelIdentifier: String = DEFAULT_GEMINI_MODEL
-        private set // Keep setter private, use setModel()
+        private set
 
     fun setModel(modelId: String) {
         if (modelId.isNotBlank()) {
@@ -47,13 +54,13 @@ class GeminiHelper(
         val apiKey = apiKeyProvider()
 
         if (apiKey.isBlank()) {
-            errorHandler("Gemini API Key is not set.")
+            errorHandler("Gemini API Key is not set.", null)
             return
         }
 
         val effectiveModelIdentifier = modelIdentifierOverride ?: currentModelIdentifier
         if (effectiveModelIdentifier.isBlank()){
-            errorHandler("Gemini Model Identifier is critically not set.")
+            errorHandler("Gemini Model Identifier is critically not set.", null)
             return
         }
 
@@ -61,7 +68,7 @@ class GeminiHelper(
             put("contents", JSONArray(contents))
             put("generationConfig", JSONObject().apply {
                 put("temperature", 0.5)
-                put("maxOutputTokens", 8192)
+                put("maxOutputTokens", 10192)
                 put("thinkingConfig", JSONObject().apply {
                     put("thinkingBudget", defaultThinkingBudget)
                 })
@@ -77,7 +84,7 @@ class GeminiHelper(
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val requestBody = requestJson.toString().toRequestBody(mediaType)
 
-        Log.d("GeminiHelper", "Sending request to model: $effectiveModelIdentifier")
+        Log.d("GeminiHelper", "Sending request to model: $effectiveModelIdentifier with body: ${requestJson.toString(2)}")
 
         val request = Request.Builder()
             .url("https://generativelanguage.googleapis.com/v1beta/models/${effectiveModelIdentifier}:generateContent?key=$apiKey")
@@ -86,7 +93,7 @@ class GeminiHelper(
 
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                errorHandler("API Network Error (${effectiveModelIdentifier}): ${e.message}")
+                errorHandler("API Network Error (${effectiveModelIdentifier}): ${e.message}", e)
             }
 
             override fun onResponse(call: Call, response: Response) {
@@ -98,7 +105,7 @@ class GeminiHelper(
                             val errorJson = JSONObject(responseBody)
                             errorBodyDetails = errorJson.getJSONObject("error").getString("message")
                         } catch (jsonEx: Exception) { /* Ignore */ }
-                        errorHandler("API Error (${effectiveModelIdentifier} - Code: ${response.code}): $errorBodyDetails")
+                        errorHandler("API Error (${effectiveModelIdentifier} - Code: ${response.code}): $errorBodyDetails", null)
                         return
                     }
 
@@ -108,27 +115,30 @@ class GeminiHelper(
                         jsonResponse.getJSONObject("promptFeedback").optString("blockReason", null) != null) {
                         val reason = jsonResponse.getJSONObject("promptFeedback").getString("blockReason")
                         val safetyRatings = jsonResponse.getJSONObject("promptFeedback").optJSONArray("safetyRatings")?.toString(2) ?: "N/A"
-                        errorHandler("API Response Blocked (${effectiveModelIdentifier}): $reason. Safety Ratings: $safetyRatings")
-                    } else if (!jsonResponse.has("candidates") || jsonResponse.getJSONArray("candidates").length() == 0) {
+                        errorHandler("API Response Blocked (${effectiveModelIdentifier}): $reason. Safety Ratings: $safetyRatings", null)
+                        return
+                    }
+
+                    if (!jsonResponse.has("candidates") || jsonResponse.getJSONArray("candidates").length() == 0) {
                         val finishReasonFromPromptFeedback = jsonResponse.optJSONObject("promptFeedback")?.optString("blockReason")
                         val finishReasonFromCandidate = jsonResponse.optJSONArray("candidates")?.optJSONObject(0)?.optString("finishReason")
-                        val finishReason = finishReasonFromPromptFeedback ?: finishReasonFromCandidate
-                        val textExistsInResponse = responseBody.contains("\"text\"")
+                        val derivedFinishReason = finishReasonFromPromptFeedback ?: finishReasonFromCandidate ?: "UNKNOWN_REASON"
+                        val textExistsInResponse = extractTextFromGeminiResponse(jsonResponse).isNotBlank()
 
-                        if (finishReason != null && finishReason != "STOP" && finishReason != "MAX_TOKENS" && !textExistsInResponse) {
-                            errorHandler("API Error (${effectiveModelIdentifier}): No valid candidates or text. Finish: $finishReason. See Logcat for full response.")
-                            Log.w("GeminiHelper", "Problematic Response (${effectiveModelIdentifier}): ${jsonResponse.toString(2)}")
+                        if (derivedFinishReason != "STOP" && derivedFinishReason != "MAX_TOKENS" && !textExistsInResponse) {
+                            errorHandler("API Error (${effectiveModelIdentifier}): No valid candidates or text. Finish Reason: $derivedFinishReason. See Logcat for full response.", null)
+                            Log.w("GeminiHelper", "Problematic Response (No Candidates/Text, Finish Reason: $derivedFinishReason) (${effectiveModelIdentifier}): ${jsonResponse.toString(2)}")
                         } else if (!textExistsInResponse) {
-                            errorHandler("API Error (${effectiveModelIdentifier}): Empty response or no text part. Finish: $finishReason. See Logcat for full response.")
-                            Log.w("GeminiHelper", "Empty Response Text (${effectiveModelIdentifier}): ${jsonResponse.toString(2)}")
+                            errorHandler("API Error (${effectiveModelIdentifier}): Response has no text part. Finish Reason: $derivedFinishReason. See Logcat for full response.", null)
+                            Log.w("GeminiHelper", "Empty Response Text (Finish Reason: $derivedFinishReason) (${effectiveModelIdentifier}): ${jsonResponse.toString(2)}")
                         } else {
                             uiCallback { callback(jsonResponse) }
                         }
-                    } else {
-                        uiCallback { callback(jsonResponse) }
+                        return
                     }
+                    uiCallback { callback(jsonResponse) }
                 } catch (e: Exception) {
-                    errorHandler("Error processing API response (${effectiveModelIdentifier}): ${e.message}. See Logcat for response body.")
+                    errorHandler("Error processing API response (${effectiveModelIdentifier}): ${e.message}. See Logcat for response body.", e)
                     Log.e("GeminiHelper", "Response Body on processing error: $responseBody", e)
                 } finally {
                     response.body?.close()
@@ -141,24 +151,34 @@ class GeminiHelper(
         try {
             val candidates = response.optJSONArray("candidates")
             if (candidates != null && candidates.length() > 0) {
-                val content = candidates.getJSONObject(0).optJSONObject("content")
+                val firstCandidate = candidates.getJSONObject(0)
+                val finishReason = firstCandidate.optString("finishReason")
+                if (finishReason != null && finishReason != "STOP" && finishReason != "MAX_TOKENS") {
+                    Log.w("GeminiHelper", "Candidate finishReason is '$finishReason'. Text might be incomplete or absent.")
+                }
+
+                val content = firstCandidate.optJSONObject("content")
                 if (content != null) {
                     val parts = content.optJSONArray("parts")
                     if (parts != null && parts.length() > 0) {
+                        val textBuilder = StringBuilder()
                         for (i in 0 until parts.length()) {
                             val part = parts.getJSONObject(i)
                             if (part.has("text")) {
-                                return part.getString("text")
+                                textBuilder.append(part.getString("text"))
                             }
+                        }
+                        if (textBuilder.isNotEmpty()) {
+                            return textBuilder.toString()
                         }
                     }
                 }
             }
-            Log.w("GeminiHelper", "Could not extract text from Gemini response structure: ${response.toString(2)}")
+            Log.w("GeminiHelper", "Could not extract text from Gemini response structure. Response: ${response.toString(2)}")
             return ""
         } catch (e: Exception) {
             Log.e("GeminiHelper", "Error extracting text from response", e)
-            errorHandler("Error extracting text from response: ${e.message}")
+            errorHandler("Error extracting text from response: ${e.message}", e)
             return ""
         }
     }
@@ -176,27 +196,62 @@ class GeminiHelper(
         throw IllegalArgumentException("No JSON array found in response text.")
     }
 
-    fun parseFileChanges(text: String, logAppender: (String) -> Unit): Map<String, String> {
-        val result = mutableMapOf<String, String>()
-        val filePattern = """FILE:\s*([^\n]+)\s*```(?:.*\n)?([\s\S]*?)```""".toRegex()
-        val matches = filePattern.findAll(text)
+    fun parseFileChanges(responseText: String, logAppender: (String) -> Unit): FileModifications {
+        val filesToWrite = mutableMapOf<String, String>()
+        val filesToDelete = mutableListOf<String>()
 
-        for (match in matches) {
-            val filePath = match.groupValues[1].trim()
-            val content = match.groupValues[2].trim()
-
-            if (filePath.isNotEmpty()) {
-                result[filePath] = content
+        val fileBlockRegex = Regex(
+            """^FILE:\s*(.+?)\s*\n```(?:[a-zA-Z0-9_.-]*\n)?([\s\S]*?)\n```""",
+            setOf(RegexOption.MULTILINE)
+        )
+        fileBlockRegex.findAll(responseText).forEach { matchResult ->
+            // CORRECTED: Access specific group values (index 1 for path, 2 for content)
+            val path = matchResult.groupValues[1].trim()
+            val content = matchResult.groupValues[2].trim()
+            if (path.isNotEmpty()) {
+                filesToWrite[path] = content
             } else {
-                logAppender("⚠️ Found code block without valid file path marker.\n")
+                logAppender("⚠️ Found a FILE block with an empty path in AI response.\n")
             }
         }
-        if (matches.count() == 0 && text.contains("```")) {
-            logAppender("⚠️ AI response contained code blocks but couldn't parse valid FILE: markers.\n")
-        } else if (matches.count() == 0 && !text.isBlank()) {
-            // logAppender("⚠️ AI response did not contain recognizable file modification blocks.\nResponse:\n$text\n")
+
+        val deleteBlockRegex = Regex(
+            """^DELETE_FILES:\s*(\[[\s\S]*?\])""",
+            setOf(RegexOption.MULTILINE)
+        )
+        deleteBlockRegex.find(responseText)?.let { matchResult ->
+            // CORRECTED: Access specific group value (index 1 for the JSON array string)
+            val jsonArrayString = matchResult.groupValues[1].trim()
+            try {
+                // This should now work as jsonArrayString is a proper String
+                val jsonArray = JSONArray(jsonArrayString)
+                for (i in 0 until jsonArray.length()) {
+                    val filePathToDelete = jsonArray.getString(i)
+                    if (filePathToDelete.isNotBlank()) {
+                        filesToDelete.add(filePathToDelete)
+                    }
+                }
+            } catch (e: JSONException) {
+                logAppender("⚠️ Failed to parse DELETE_FILES JSON array: \"$jsonArrayString\". Error: ${e.message}\n")
+            }
         }
-        return result
+
+        val foundFileBlocks = filesToWrite.isNotEmpty()
+        val foundDeleteDirective = responseText.contains("DELETE_FILES:")
+        val successfullyParsedDeletions = filesToDelete.isNotEmpty()
+
+        if (!foundFileBlocks && !foundDeleteDirective) {
+            if (responseText.isNotBlank()) {
+                logAppender("AI response did not contain 'FILE:' or 'DELETE_FILES:' keywords. Full response logged for review if issues persist.\n")
+            }
+        } else {
+            if (responseText.contains("FILE:") && !foundFileBlocks) {
+                logAppender("⚠️ AI response contained 'FILE:' keyword but no valid file blocks were parsed. Check AI response format and regex.\n")
+            }
+            if (foundDeleteDirective && !successfullyParsedDeletions) {
+                logAppender("ℹ️ 'DELETE_FILES:' directive found, but no files were parsed for deletion (array might be empty or malformed).\n")
+            }
+        }
+        return FileModifications(filesToWrite, filesToDelete)
     }
-    // GeminiConversation class has been moved to its own file or outside this class
 }

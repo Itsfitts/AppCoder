@@ -14,6 +14,10 @@ signing-key.jks
 *.ap_
 *.aab
 
+# Add these new rules for build outputs
+core/app/dev/baselineProfiles/
+core/app/dev/output-metadata.json
+
 # Files for the ART/Dalvik VM
 *.dex
 

@@ -21,6 +21,7 @@
     *   Transfer the downloaded `.apk` file to your Android phone.
     *   On your phone, open a file manager, find the `.apk`, and tap to install.
         *   You might need to **enable "Install from unknown sources"** in your phone's settings.
+        *   On newer phones you can save some time by disabling the "Google Play Protect" feature since all it does is asking you for each install of your selfe build apps to confirm your identity.
     *   After AppCoder installs and completes its initial setup (grant permissions, wait for installation of all the dependencies):
         *   Tap the **🔵 blue plus (+) button**.
         *   Enter an **App Name**, a **simple App Description** (keep it simple for now more complex apps will be possible in the future), paste your **Gemini API Key** and press "Generate App".

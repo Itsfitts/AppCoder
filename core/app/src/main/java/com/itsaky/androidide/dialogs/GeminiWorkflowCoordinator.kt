@@ -1,301 +1,284 @@
-package com.itsaky.androidide.dialogs
+package com.itsaky.androidide.dialogs // Adjust package if needed
 
 import android.util.Log
-import org.json.JSONArray // Keep this for parsing file selection, might be needed if deletion also uses JSON
-import org.json.JSONException // For handling JSON parsing errors
+import org.json.JSONArray
+import org.json.JSONException
 import java.io.File
 import java.io.FileReader
 import java.io.IOException
 import java.util.Locale
-
-// Assume FileModifications is defined in GeminiHelper or a shared model file
-// If not, you can define it here or import it from where GeminiHelper.parseFileChanges can access it.
-// For this example, let's assume it's accessible (e.g., defined in GeminiHelper.kt)
-// data class FileModifications(
-//    val filesToWrite: Map<String, String>,
-//    val filesToDelete: List<String>
-// )
-
+// Ensure ProjectFileUtils is correctly imported
+import com.itsaky.androidide.dialogs.ProjectFileUtils // If in this package
+// import com.itsaky.androidide.utils.ProjectFileUtils // If in a utils package
 
 class GeminiWorkflowCoordinator(
-    private val geminiHelper: GeminiHelper, // Assumes GeminiHelper is updated
-    private val logAppender: (String) -> Unit,
-    private val errorHandler: (String, Exception?) -> Unit,
-    private val dialogInterface: FileEditorDialog // To update state
+    private val geminiHelper: GeminiHelper,
+    private val directLogAppender: (String) -> Unit,
+    private val directErrorHandler: (String, Exception?) -> Unit,
+    private val fileEditorInterface: FileEditorInterface
 ) {
     companion object {
         private const val TAG = "GeminiWorkflow"
     }
 
-    private val conversation = GeminiConversation() // Each workflow gets its own conversation
+    private val conversation = GeminiConversation()
     private val selectedFilesForModification = mutableListOf<String>()
 
+    private fun logViaInterface(message: String) = fileEditorInterface.appendToLog(message)
+
     fun startModificationFlow(appName: String, appDescription: String, projectDir: File) {
-        logAppender("Gemini Workflow: Starting for project '$appName'\n")
+        logViaInterface("Gemini Workflow: Starting for project '$appName'\n")
         conversation.clear()
         selectedFilesForModification.clear()
-        dialogInterface.currentProjectDir = projectDir // Ensure dialog has the correct dir
+        fileEditorInterface.currentProjectDir = projectDir
+        fileEditorInterface.displayAiConclusion(null) // Clear previous conclusion at the start
 
-        dialogInterface.setState(FileEditorDialog.WorkflowState.SELECTING_FILES)
+        fileEditorInterface.setState(FileEditorActivity.WorkflowState.SELECTING_FILES)
         identifyFilesToModify(appName, appDescription, projectDir)
     }
 
     private fun identifyFilesToModify(appName: String, appDescription: String, projectDir: File) {
-        logAppender("Gemini Workflow Step: Identifying files to modify/create...\n")
+        logViaInterface("Gemini Workflow Step: Identifying files to modify/create...\n")
         val files = ProjectFileUtils.scanProjectFiles(projectDir)
 
-        dialogInterface.activity?.runOnUiThread {
-            if (files.isEmpty() && !dialogInterface.isModifyingExistingProjectInternal) {
-                errorHandler("No code files found in the newly created project template. Cannot proceed.", null)
+        fileEditorInterface.runOnUiThread {
+            if (files.isEmpty() && !fileEditorInterface.isModifyingExistingProjectInternal) {
+                directErrorHandler("No code files found in the newly created project template. Cannot proceed.", null)
+                fileEditorInterface.setState(FileEditorActivity.WorkflowState.ERROR)
                 return@runOnUiThread
-            } else if (files.isEmpty() && dialogInterface.isModifyingExistingProjectInternal) {
-                logAppender("No existing code files found by scanner in '$appName'. AI will be prompted to create necessary files.\n")
+            } else if (files.isEmpty() && fileEditorInterface.isModifyingExistingProjectInternal) {
+                logViaInterface("No existing code files found by scanner in '$appName'. AI will be prompted to create necessary files.\n")
             } else {
-                logAppender("Found ${files.size} potentially relevant files in the project.\n")
+                logViaInterface("Found ${files.size} potentially relevant files in the project.\n")
             }
-            sendGeminiFileSelectionPrompt(appName, appDescription, files, projectDir)
+            sendGeminiFileSelectionPrompt(appName, appDescription, files)
         }
     }
 
-    private fun sendGeminiFileSelectionPrompt(appName: String, appDescription: String, files: List<String>, projectDir: File) {
+    private fun sendGeminiFileSelectionPrompt(appName: String, appDescription: String, files: List<String>) {
         val fileListText = if (files.isNotEmpty()) {
             files.joinToString("\n") { "- $it" }
         } else {
             "No existing editable files were found in this project. You might need to create all necessary files from scratch."
         }
-        val isExisting = dialogInterface.isModifyingExistingProjectInternal
+        val isExisting = fileEditorInterface.isModifyingExistingProjectInternal
         val promptContext = if (isExisting) "modifying an existing Android app" else "working with a basic Android app template I just created"
         val actionVerb = if (isExisting) "MODIFY or CREATE" else "CREATED or significantly MODIFIED"
 
         val prompt = """
             I am $promptContext called "$appName".
             The main goal for this app is: "$appDescription"
-
             Here is a list of potentially relevant files from the project (or a note if empty):
             $fileListText
-
             Based ONLY on the app's main goal and the file list (if any), which of these files would MOST LIKELY need to be $actionVerb?
             If the file list is empty or the existing files are not relevant to the goal, list the NEW files that would be essential to create to achieve the goal.
-            Focus on the core essentials (e.g., main Activities, primary Layout XMLs, key ViewModel/Logic classes if implied by the description, and build.gradle.kts files if new dependencies are clearly needed for the core goal).
-
-            Respond ONLY with a JSON array of the relative file paths.
-            Example: ["app/src/main/java/com/example/myapp/MainActivity.kt", "app/src/main/res/layout/activity_main.xml"]
-            Provide no explanation, just the JSON array.
+            Focus on the core essentials.
+            Respond ONLY with a JSON array of the relative file paths. Example: ["app/src/main/java/com/example/myapp/MainActivity.kt"]
         """.trimIndent()
 
         conversation.addUserMessage(prompt)
-        logAppender("Asking AI to select relevant files...\n")
+        logViaInterface("Asking AI to select relevant files...\n")
 
         geminiHelper.sendGeminiRequest(
-            contents = conversation.getContents(),
+            contents = conversation.getContentsForApi(),
             callback = { response ->
-                try {
-                    val responseText = geminiHelper.extractTextFromGeminiResponse(response)
-                    logAppender("AI file selection response received.\n")
-                    val jsonArrayText = geminiHelper.extractJsonArrayFromText(responseText) // Assumes this can still be used or adapted
-                    val jsonArray = JSONArray(jsonArrayText)
-                    selectedFilesForModification.clear()
-                    for (i in 0 until jsonArray.length()) {
-                        selectedFilesForModification.add(jsonArray.getString(i))
-                    }
-                    conversation.addModelMessage(responseText)
+                fileEditorInterface.runOnUiThread {
+                    try {
+                        val responseText = geminiHelper.extractTextFromGeminiResponse(response)
+                        logViaInterface("AI file selection response received.\n")
+                        val jsonArrayText = geminiHelper.extractJsonArrayFromText(responseText)
+                        val jsonArray = JSONArray(jsonArrayText)
+                        selectedFilesForModification.clear()
+                        for (i in 0 until jsonArray.length()) {
+                            selectedFilesForModification.add(jsonArray.getString(i))
+                        }
+                        conversation.addModelMessage(responseText)
 
-                    if (selectedFilesForModification.isEmpty()) {
-                        logAppender("⚠️ AI did not select/suggest any files. Project remains as is.\n")
-                        dialogInterface.setState(FileEditorDialog.WorkflowState.READY_FOR_ACTION)
-                    } else {
-                        logAppender("AI selected/suggested ${selectedFilesForModification.size} files:\n${selectedFilesForModification.joinToString("") { "  - $it\n" }}")
-                        loadSelectedFilesAndAskForCode(appName, appDescription, projectDir)
+                        if (selectedFilesForModification.isEmpty()) {
+                            logViaInterface("⚠️ AI did not select/suggest any files. Project remains as is.\n")
+                            fileEditorInterface.setState(FileEditorActivity.WorkflowState.READY_FOR_ACTION)
+                        } else {
+                            logViaInterface("AI selected/suggested ${selectedFilesForModification.size} files:\n${selectedFilesForModification.joinToString("\n") { "  - $it" }}\n")
+                            loadSelectedFilesAndAskForCode(appName, appDescription)
+                        }
+                    } catch (e: IllegalArgumentException) {
+                        directErrorHandler("AI did not provide a valid list of files: ${e.message}", e)
+                    } catch (e: JSONException) {
+                        directErrorHandler("Failed to parse AI's file selection as JSON: ${e.message}", e)
+                    } catch (e: Exception) {
+                        directErrorHandler("Unexpected error during file selection: ${e.message}", e)
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to parse file selection response from Gemini.", e)
-                    var errorMessage = "Failed to parse AI's file selection: ${e.message}."
-                    if (e is JSONException) {
-                        errorMessage += " Often this is due to the AI not providing a valid JSON array for file selection."
-                    }
-                    errorHandler("$errorMessage Check Logcat for Gemini's raw response.", e)
                 }
             }
         )
     }
 
-    private fun loadSelectedFilesAndAskForCode(appName: String, appDescription: String, projectDir: File) {
-        dialogInterface.setState(FileEditorDialog.WorkflowState.GENERATING_CODE)
-        logAppender("Gemini Workflow Step: Loading selected files for code generation...\n")
+    private fun loadSelectedFilesAndAskForCode(appName: String, appDescription: String) {
+        val projectDir = fileEditorInterface.currentProjectDir ?: run {
+            directErrorHandler("Project directory is null in loadSelectedFilesAndAskForCode.", null)
+            return
+        }
+
+        fileEditorInterface.setState(FileEditorActivity.WorkflowState.GENERATING_CODE)
+        logViaInterface("Gemini Workflow Step: Loading selected files for code generation...\n")
         val fileContents = mutableMapOf<String, String>()
         val missingOrUnreadableFiles = mutableListOf<String>()
 
         for (filePath in selectedFilesForModification) {
             val file = File(projectDir, filePath)
             if (!file.exists() || !file.isFile) {
-                logAppender("Note: File '$filePath' not found. Will ask AI to create it.\n")
+                logViaInterface("Note: File '$filePath' not found. Will ask AI to create it.\n")
                 missingOrUnreadableFiles.add(filePath)
                 fileContents[filePath] = "// File: $filePath (This file does not exist yet. Please provide its complete content.)"
             } else {
                 try {
                     fileContents[filePath] = FileReader(file).use { it.readText() }
                 } catch (e: IOException) {
-                    Log.e(TAG, "Error reading file $filePath", e)
-                    logAppender("⚠️ Error reading file $filePath: ${e.message}. Will ask AI to provide content.\n")
+                    logViaInterface("⚠️ Error reading file $filePath: ${e.message}. Will ask AI to provide content.\n")
                     missingOrUnreadableFiles.add(filePath)
-                    fileContents[filePath] = "// File: $filePath (Error reading existing content. Please provide its complete content.)"
+                    fileContents[filePath] = "// File: $filePath (Error reading existing content. Will ask AI to regenerate.)"
                 }
             }
         }
-
         if (fileContents.isEmpty() && selectedFilesForModification.isNotEmpty()) {
-            logAppender("All selected files are new or were unreadable. AI will generate content from scratch for them.\n")
+            logViaInterface("All selected files are new or were unreadable. AI will generate content from scratch.\n")
         } else if (fileContents.isEmpty() && selectedFilesForModification.isEmpty()) {
-            // This case should ideally be caught by the check in sendGeminiFileSelectionPrompt callback
-            errorHandler("No files selected or loaded for code generation.", null)
+            directErrorHandler("No files selected or loaded for code generation.", null)
             return
         }
-
-        logAppender("Loaded/identified ${fileContents.size} files for AI processing.\n")
-        sendGeminiCodeGenerationPrompt(appName, appDescription, fileContents, missingOrUnreadableFiles, projectDir)
+        logViaInterface("Loaded/identified ${fileContents.size} files for AI processing.\n")
+        sendGeminiCodeGenerationPrompt(appName, appDescription, fileContents, missingOrUnreadableFiles)
     }
 
     private fun sendGeminiCodeGenerationPrompt(
-        appName: String,
-        appDescription: String,
-        fileContentsMap: Map<String, String>,
-        missingFilesList: List<String>,
-        projectDir: File // Keep for context if needed, though not directly used in this version of prompt logic
+        appName: String, appDescription: String,
+        fileContentsMap: Map<String, String>, missingFilesList: List<String>
     ) {
         val filesContentText = buildString {
-            fileContentsMap.forEach { (path, content) ->
-                append("FILE: $path\n```\n$content\n```\n\n")
-            }
+            fileContentsMap.forEach { (path, content) -> append("FILE: $path\n```\n$content\n```\n\n") }
         }
         val creationNote = if (missingFilesList.isNotEmpty()) {
-            "The following files were identified as needing creation or were unreadable; please provide their full content:\n" +
-                    missingFilesList.joinToString("\n") { "- $it" } + "\n\n"
+            "The following files were identified as needing creation or were unreadable; please provide their full content:\n${missingFilesList.joinToString("\n") { "- $it" }}\n\n"
         } else ""
-
-        val isExisting = dialogInterface.isModifyingExistingProjectInternal
-        val packageNameInstruction: String
-        if (isExisting) {
-            var inferredPackageName = "com.example.unknown"
-            val firstExistingKtFile = fileContentsMap.entries
+        val isExisting = fileEditorInterface.isModifyingExistingProjectInternal
+        val packageNameInstruction: String = if (isExisting) {
+            val inferredPackageName = fileContentsMap.entries
                 .firstOrNull { (path, _) -> path.endsWith(".kt") && !missingFilesList.contains(path) }
-
-            if (firstExistingKtFile != null) {
-                try {
-                    val content = firstExistingKtFile.value
-                    val packageRegex = Regex("""^\s*package\s+([a-zA-Z0-9_.]+)""")
-                    packageRegex.find(content)?.groupValues?.get(1)?.let { inferredPackageName = it }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Minor issue inferring package for prompt (existing project). Error: ${e.message}")
-                }
-            } else {
-                Log.w(TAG, "Could not find an existing Kotlin file to infer package name for existing project.")
-            }
-            packageNameInstruction = "If creating new Kotlin/Java files, try to place them in an appropriate existing package (e.g., derived from '$inferredPackageName') or a new sub-package."
+                ?.value?.let { Regex("""^\s*package\s+([a-zA-Z0-9_.]+)""").find(it)?.groupValues?.get(1) } ?: "com.example.unknown"
+            "If creating new Kotlin/Java files, use an appropriate existing package (e.g., derived from '$inferredPackageName') or a new sub-package."
         } else {
-            val localSanitizedAppName = appName.filter { it.isLetterOrDigit() }.lowercase(Locale.getDefault()).ifEmpty { "myapp" }
-            packageNameInstruction = "Pay attention to package names if creating new Kotlin/Java files (e.g., `com.example.$localSanitizedAppName`)."
+            val sanitizedAppName = appName.filter { it.isLetterOrDigit() }.lowercase(Locale.getDefault()).ifEmpty { "myapp" }
+            "Pay attention to package names if creating new Kotlin/Java files (e.g., `com.example.$sanitizedAppName`)."
         }
-
         val prompt = """
             You are an expert Android App Developer. Your task is to modify or create files for an Android app named "$appName".
             The primary goal of this app is: "$appDescription"
-
             $creationNote Important: For any file you provide content for, ensure it is the *complete and valid* content for that file.
-
             Current file contents (or placeholders for new/unreadable files):
             $filesContentText
-
             Instructions:
             1. Review the app description and the provided file contents/placeholders.
-            2. For each file listed (or new files you deem necessary based on the description), provide its FULL, UPDATED, and VALID content to achieve the app's goal.
-            3. If new dependencies are implied by the app description, add them to the `app/build.gradle.kts` (or `app/build.gradle`) file in the `dependencies { ... }` block.
+            2. For each file listed (or new files you deem necessary), provide its FULL, UPDATED, and VALID content.
+            3. If new dependencies are implied, add them to `app/build.gradle.kts` (or `app/build.gradle`).
             4. Ensure Kotlin code is idiomatic and XML layouts are well-formed.
             5. $packageNameInstruction
-            6. Only output content for files that actually need changes or creation. If a file from the input list is fine as-is or not relevant to the core goal, do not include it in your response.
-            7. **VERY IMPORTANT**: If your changes (e.g., creating UI programmatically in Kotlin) make any existing files (especially XML layout files like `activity_main.xml`, `fragment_*.xml`, `item_*.xml`, etc.) obsolete, you MUST list their full project-relative paths for DELETION.
+            6. Only output content for files that need changes or creation.
+            7. If your changes make any existing files (especially XML layouts) obsolete, list their full project-relative paths for DELETION.
+            8. **After all file and deletion instructions, provide a concise summary of the changes you made as a bullet list, formatted for easy reading. This summary will be shown to the user.**
 
             Format your response STRICTLY as follows:
-            Each modified/created file block must start with `FILE: path/to/file.ext` on a new line, followed by a fenced code block with the complete file content.
+            Each modified/created file block must start with `FILE: path/to/file.ext`, followed by a fenced code block.
             ```
             FILE: path/to/file.ext
-            `[optional language hint like kotlin, xml, groovy]`
+            `[optional language hint]`
             // Complete file content
             `
             ```
             (Repeat for each file to modify/create)
 
-            If there are files to delete, after all FILE blocks, add a block starting with `DELETE_FILES:` followed by a JSON array of strings, where each string is a project-relative path of a file to be deleted.
-            Example of DELETE_FILES block:
+            If there are files to delete, after all FILE blocks, add `DELETE_FILES:` followed by a JSON array of strings.
+            Example: DELETE_FILES: ["app/src/main/res/layout/old.xml"]
+            If no files to delete, OMIT DELETE_FILES or use `DELETE_FILES: []`.
+
+            Finally, after all FILE and DELETE_FILES blocks, add a `CONCLUSION:` block followed by your summary in a fenced code block (markdown with bullets is good).
+            Example of CONCLUSION block:
             ```
-            DELETE_FILES: ["app/src/main/res/layout/old_layout_to_remove.xml", "app/src/main/java/com/example/myapp/OldHelper.kt"]
+            CONCLUSION:
+            `
+            - Refactored user authentication to use a new service.
+            - Added a settings screen with theme selection.
+            - Updated dependencies for Material Design 3.
+            - Deleted obsolete `OldAuthManager.kt`.
+            `
             ```
-            If no files need to be deleted, OMIT the DELETE_FILES block entirely or provide an empty array `DELETE_FILES: []`.
         """.trimIndent()
 
         conversation.addUserMessage(prompt)
-        logAppender("Sending file contents to AI for code generation...\n")
-
+        logViaInterface("Sending file contents to AI for code generation...\n")
         geminiHelper.sendGeminiRequest(
-            contents = conversation.getContents(),
+            contents = conversation.getContentsForApi(),
             callback = { response ->
-                try {
-                    val responseText = geminiHelper.extractTextFromGeminiResponse(response)
-                    conversation.addModelMessage(responseText) // Store raw response for context
-                    logAppender("AI responded with code modifications.\n")
-                    // applyCodeChanges will now use GeminiHelper.parseFileChanges which returns FileModifications
-                    applyCodeChanges(responseText, projectDir)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed during Gemini code generation response processing.", e)
-                    errorHandler("Failed during AI code generation response: ${e.message}. Check Logcat.", e)
+                fileEditorInterface.runOnUiThread {
+                    try {
+                        val responseText = geminiHelper.extractTextFromGeminiResponse(response)
+                        conversation.addModelMessage(responseText)
+                        logViaInterface("AI responded with code modifications.\n")
+                        applyCodeChanges(responseText)
+                    } catch (e: Exception) {
+                        directErrorHandler("Failed during AI code generation response: ${e.message}", e)
+                    }
                 }
             }
         )
     }
 
-    private fun applyCodeChanges(responseText: String, projectDir: File) {
-        logAppender("Gemini Workflow Step: Applying code changes and deletions...\n")
+    private fun applyCodeChanges(responseText: String) {
+        val projectDir = fileEditorInterface.currentProjectDir ?: run {
+            directErrorHandler("Project directory is null in applyCodeChanges.", null)
+            return
+        }
+        logViaInterface("Gemini Workflow Step: Applying code changes, deletions, and displaying conclusion...\n")
+        val modifications = geminiHelper.parseFileChanges(responseText, directLogAppender)
 
-        // This is the critical change:
-        // GeminiHelper.parseFileChanges is now expected to parse both FILE: blocks and DELETE_FILES: block
-        // and return a FileModifications object (or similar structure).
-        val modifications = geminiHelper.parseFileChanges(responseText, logAppender) // This method needs to be updated in GeminiHelper.kt
+        // Display conclusion first using the interface method
+        fileEditorInterface.displayAiConclusion(modifications.conclusion)
 
         if (modifications.filesToWrite.isEmpty() && modifications.filesToDelete.isEmpty()) {
-            logAppender("⚠️ AI did not provide any recognizable file changes or deletions in the correct format. Project may not be fully modified as intended.\n")
-            dialogInterface.setState(FileEditorDialog.WorkflowState.READY_FOR_ACTION)
+            if (modifications.conclusion == null) {
+                logViaInterface("⚠️ AI did not provide any recognizable file changes, deletions, or conclusion.\n")
+            } else {
+                logViaInterface("AI provided a conclusion, but no file changes or deletions were processed.\n")
+            }
+            fileEditorInterface.setState(FileEditorActivity.WorkflowState.READY_FOR_ACTION)
             return
         }
 
-        // ProjectFileUtils.processFileChanges also needs to be updated to handle both lists.
-        // Let's assume it's renamed or refactored to something like processFileChangesAndDeletions
-        ProjectFileUtils.processFileChangesAndDeletions( // This method needs to be updated/created in ProjectFileUtils.kt
+        ProjectFileUtils.processFileChangesAndDeletions(
             projectDir,
             modifications.filesToWrite,
             modifications.filesToDelete,
-            logAppender
+            directLogAppender
         ) { writeSuccessCount, writeErrorCount, deleteSuccessCount, deleteErrorCount ->
-            if (writeErrorCount > 0 || deleteErrorCount > 0) {
-                logAppender("⚠️ Some operations failed during the process. Writes (Error: $writeErrorCount), Deletes (Error: $deleteErrorCount).\n")
+            fileEditorInterface.runOnUiThread {
+                if (writeErrorCount > 0 || deleteErrorCount > 0) {
+                    logViaInterface("⚠️ Some file operations failed. Writes (Success: $writeSuccessCount, Error: $writeErrorCount), Deletes (Success: $deleteSuccessCount, Error: $deleteErrorCount).\n")
+                }
+                var changesApplied = false
+                if (writeSuccessCount > 0) {
+                    logViaInterface("✅ Successfully applied $writeSuccessCount file content changes.\n")
+                    changesApplied = true
+                }
+                if (deleteSuccessCount > 0) {
+                    logViaInterface("✅ Successfully deleted $deleteSuccessCount files.\n")
+                    changesApplied = true
+                }
+                if (!changesApplied && writeErrorCount == 0 && deleteErrorCount == 0 && modifications.conclusion == null) {
+                    logViaInterface("No specific file changes or deletions were processed or provided.\n")
+                } else if (!changesApplied && writeErrorCount == 0 && deleteErrorCount == 0 && modifications.conclusion != null) {
+                    // This case means only a conclusion was provided. The log for it is already handled by displayAiConclusion.
+                }
+                fileEditorInterface.setState(FileEditorActivity.WorkflowState.READY_FOR_ACTION)
             }
-            var changesApplied = false
-            if (writeSuccessCount > 0) {
-                logAppender("✅ Successfully applied $writeSuccessCount file content changes.\n")
-                changesApplied = true
-            }
-            if (deleteSuccessCount > 0) {
-                logAppender("✅ Successfully deleted $deleteSuccessCount files.\n")
-                changesApplied = true
-            }
-
-            if (!changesApplied && writeErrorCount == 0 && deleteErrorCount == 0) {
-                logAppender("No specific file changes or deletions were applied (perhaps AI deemed no changes necessary, format was not matched, or files to delete didn't exist). Process completed based on AI response.\n")
-            }
-            dialogInterface.setState(FileEditorDialog.WorkflowState.READY_FOR_ACTION)
         }
     }
-
-    // This property access assumes `FileEditorDialog` has a way to expose this,
-    // or you might pass this state differently.
-    private val FileEditorDialog.isModifyingExistingProjectInternal: Boolean
-        get() = this.isModifyingExistingProject
 }

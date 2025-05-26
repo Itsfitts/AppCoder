@@ -1,70 +1,75 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.constraintlayout.widget.ConstraintLayout
-  xmlns:android="http://schemas.android.com/apk/res/android"
-  xmlns:app="http://schemas.android.com/apk/res-auto"
-  xmlns:tools="http://schemas.android.com/tools"
-  android:layout_width="match_parent"
-  android:layout_height="match_parent"
-  android:animateLayoutChanges="true"
-  android:orientation="vertical"
-  tools:ignore="RtlCompat">
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:animateLayoutChanges="true"
+    tools:ignore="RtlCompat,Orientation"> <!-- Added Orientation for clarity if needed by tools -->
 
   <com.google.android.material.appbar.AppBarLayout
-    android:id="@+id/appbar"
-    android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    app:layout_behavior="com.google.android.material.appbar.AppBarLayout$Behavior"
-    app:layout_constraintEnd_toEndOf="parent"
-    app:layout_constraintStart_toStartOf="parent"
-    app:layout_constraintTop_toTopOf="parent"
-    android:fitsSystemWindows="true">
+      android:id="@+id/appbar"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      app:layout_behavior="com.google.android.material.appbar.AppBarLayout$Behavior"
+      app:layout_constraintEnd_toEndOf="parent"
+      app:layout_constraintStart_toStartOf="parent"
+      app:layout_constraintTop_toTopOf="parent"
+      android:fitsSystemWindows="true">
 
-      <com.google.android.material.appbar.MaterialToolbar
-        android:layout_width="match_parent"
-        android:layout_height="?attr/actionBarSize"
-        app:title="@string/app_name"
-        app:titleTextAppearance="@style/TextAppearance.AndroidIDE.TitleLarge.Bold"
-        app:titleCentered="true" />
-
+  <com.google.android.material.appbar.MaterialToolbar
+      android:layout_width="match_parent"
+      android:layout_height="?attr/actionBarSize"
+      app:title="@string/app_name"
+      app:titleTextAppearance="@style/TextAppearance.AndroidIDE.TitleLarge.Bold"
+      app:titleCentered="true" />
   </com.google.android.material.appbar.AppBarLayout>
 
-  <FrameLayout
+
+  <ImageButton
+      android:id="@+id/button_launch_ai_editor"
+      android:layout_width="150dp"
+  android:layout_height="70dp"
+  android:layout_marginStart="26dp"
+  android:layout_marginBottom="36dp"
+  android:adjustViewBounds="true"
+  android:background="?attr/selectableItemBackground"
+  android:contentDescription="Launch AI App Generator"
+  android:padding="8dp"
+  android:scaleType="fitCenter"
+  android:src="@drawable/generate_with_ai_flame"
+  app:layout_constraintBottom_toBottomOf="parent"
+  app:layout_constraintStart_toStartOf="parent" />
+
+
+    <FrameLayout
     android:id="@+id/fragment_containers_parent"
     android:layout_width="0dp"
     android:layout_height="0dp"
-    app:layout_constraintBottom_toBottomOf="parent"
+    app:layout_constraintTop_toBottomOf="@id/appbar"
+    app:layout_constraintBottom_toTopOf="@id/button_launch_ai_editor"
     app:layout_constraintEnd_toEndOf="parent"
-    app:layout_constraintStart_toStartOf="parent"
-    app:layout_constraintTop_toBottomOf="@id/appbar">
+    app:layout_constraintStart_toStartOf="parent">
 
-    <androidx.fragment.app.FragmentContainerView
-      android:id="@+id/main"
-      android:name="com.itsaky.androidide.fragments.MainFragment"
-      android:layout_width="match_parent"
-      android:layout_height="match_parent" />
+  <androidx.fragment.app.FragmentContainerView
+  android:id="@+id/main"
+  android:name="com.itsaky.androidide.fragments.MainFragment"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent" />
 
-    <androidx.fragment.app.FragmentContainerView
-      android:id="@+id/template_list"
-      android:name="com.itsaky.androidide.fragments.TemplateListFragment"
-      android:layout_width="match_parent"
-      android:layout_height="match_parent" />
+  <androidx.fragment.app.FragmentContainerView
+  android:id="@+id/template_list"
+  android:name="com.itsaky.androidide.fragments.TemplateListFragment"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent" />
 
-    <androidx.fragment.app.FragmentContainerView
-      android:id="@+id/template_details"
-      android:name="com.itsaky.androidide.fragments.TemplateDetailsFragment"
-      android:layout_width="match_parent"
-      android:layout_height="match_parent" />
+  <androidx.fragment.app.FragmentContainerView
+  android:id="@+id/template_details"
+  android:name="com.itsaky.androidide.fragments.TemplateDetailsFragment"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent" />
 
-  </FrameLayout>
-
-  <com.google.android.material.floatingactionbutton.FloatingActionButton
-        android:id="@+id/fab_file_editor"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_margin="16dp"
-        android:contentDescription="@string/fab_description"
-        app:srcCompat="@drawable/ic_add"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
+    </FrameLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

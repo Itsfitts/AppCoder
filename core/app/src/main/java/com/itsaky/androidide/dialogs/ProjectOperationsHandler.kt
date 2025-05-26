@@ -1,12 +1,23 @@
-package com.itsaky.androidide.dialogs
+package com.itsaky.androidide.dialogs // Your package for this handler
 
 import android.util.Log
 import com.itsaky.androidide.models.NewProjectDetails
 import com.itsaky.androidide.templates.Language
+import com.itsaky.androidide.templates.ProjectTemplate // For type of 'template'
 import com.itsaky.androidide.templates.ProjectTemplateRecipeResult
+import com.itsaky.androidide.templates.RecipeExecutor // The interface for the executor type
 import com.itsaky.androidide.templates.Sdk
+import com.itsaky.androidide.templates.Parameter // Base class for parameters
+// TemplateRecipe is implicitly used via template.recipe
 import com.itsaky.androidide.templates.impl.basicActivity.basicActivityProject
+// CORRECTED IMPORT for your production TemplateRecipeExecutor
 import com.itsaky.androidide.utils.TemplateRecipeExecutor
+
+// Specific parameter types
+import com.itsaky.androidide.templates.StringParameter
+import com.itsaky.androidide.templates.EnumParameter
+import com.itsaky.androidide.templates.BooleanParameter
+
 import java.io.File
 import java.io.IOException
 import java.util.Locale
@@ -14,13 +25,16 @@ import kotlin.concurrent.thread
 
 class ProjectOperationsHandler(
     private val projectsBaseDir: File,
-    private val logAppender: (String) -> Unit,
-    private val errorHandler: (String, Exception?) -> Unit,
-    private val dialogInterface: FileEditorDialog // To call back onTemplateProjectCreated
+    private val directLogAppender: (String) -> Unit,
+    private val directErrorHandler: (String, Exception?) -> Unit,
+    private val fileEditorInterface: FileEditorInterface
 ) {
     companion object {
         private const val TAG = "ProjectOpsHandler"
     }
+
+    private fun logViaInterface(message: String) = fileEditorInterface.appendToLog(message)
+    private fun errorViaInterface(message: String, e: Exception?) = fileEditorInterface.handleError(message, e)
 
     fun projectExists(appName: String): Boolean {
         if (appName.isBlank()) return false
@@ -29,71 +43,75 @@ class ProjectOperationsHandler(
     }
 
     fun createNewProjectFromTemplate(appName: String, onComplete: (projectDir: File) -> Unit) {
-        logAppender("Starting new project template creation for: $appName\n")
-        dialogInterface.setState(FileEditorDialog.WorkflowState.CREATING_PROJECT_TEMPLATE)
+        logViaInterface("Starting new project template creation for: $appName\n")
+        fileEditorInterface.setState(FileEditorActivity.WorkflowState.CREATING_PROJECT_TEMPLATE)
 
-        thread { // Perform file operations off the main thread
+        thread {
             try {
                 val packageName = createPackageName(appName)
-                val projectDir = File(projectsBaseDir, appName) // Target directory
-
+                val projectDir = File(projectsBaseDir, appName)
                 if (projectDir.exists()) {
-                    // This should ideally be caught before calling this method,
-                    // but double-check here.
-                    errorHandler("Project directory '$appName' already exists for new project.", null)
+                    errorViaInterface("Project directory '$appName' already exists.", null)
+                    fileEditorInterface.setState(FileEditorActivity.WorkflowState.IDLE)
                     return@thread
                 }
 
-                logAppender("Package Name: $packageName\n")
-                logAppender("Save Location: ${projectDir.absolutePath}\n")
-                logAppender("Language: Kotlin, Min SDK: 21\n")
+                logViaInterface("Package Name: $packageName\n")
+                logViaInterface("Save Location: ${projectDir.absolutePath}\n")
 
                 val projectDetails = NewProjectDetails().apply {
                     this.name = appName
                     this.packageName = packageName
-                    this.minSdk = 21 // Default Min SDK
-                    this.targetSdk = 34 // Default Target SDK
-                    this.language = "kotlin" // Default language
+                    this.minSdk = 21
+                    this.targetSdk = 34
+                    this.language = "kotlin"
                     this.savePath = projectsBaseDir.absolutePath
                 }
 
-                val template = basicActivityProject() // Assuming this is accessible
+                val template: ProjectTemplate = basicActivityProject()
 
-                // Setup parameters (using the extension function from your original code)
                 val iterator = template.parameters.iterator()
                 try {
-                    (iterator.next() as? com.itsaky.androidide.templates.StringParameter)?.setValue(projectDetails.name)
-                    (iterator.next() as? com.itsaky.androidide.templates.StringParameter)?.setValue(projectDetails.packageName)
-                    (iterator.next() as? com.itsaky.androidide.templates.StringParameter)?.setValue(projectDetails.savePath)
+                    (iterator.next() as? StringParameter)?.setValue(projectDetails.name)
+                    (iterator.next() as? StringParameter)?.setValue(projectDetails.packageName)
+                    (iterator.next() as? StringParameter)?.setValue(projectDetails.savePath)
                     val langEnum = if (projectDetails.language == "kotlin") Language.Kotlin else Language.Java
-                    (iterator.next() as? com.itsaky.androidide.templates.EnumParameter<Language>)?.setValue(langEnum)
+                    (iterator.next() as? EnumParameter<Language>)?.setValue(langEnum)
                     val sdkEnum = Sdk.values().find { it.api == projectDetails.minSdk } ?: Sdk.Lollipop
-                    (iterator.next() as? com.itsaky.androidide.templates.EnumParameter<Sdk>)?.setValue(sdkEnum)
+                    (iterator.next() as? EnumParameter<Sdk>)?.setValue(sdkEnum)
                     val useKtsValue = (langEnum == Language.Kotlin)
                     if (iterator.hasNext()) {
-                        (iterator.next() as? com.itsaky.androidide.templates.BooleanParameter)?.setValue(useKtsValue)
+                        (iterator.next() as? BooleanParameter)?.setValue(useKtsValue)
                     }
                 } catch (e: Exception) {
-                    throw IOException("Failed to set template parameters: ${e.message}", e)
+                    throw IOException("Failed to set template parameters using iterator: ${e.message}", e)
                 }
 
+                // CORRECTED: Instantiating TemplateRecipeExecutor from com.itsaky.androidide.utils
+                val executor: RecipeExecutor = TemplateRecipeExecutor()
 
-                val executor = TemplateRecipeExecutor()
-                val result = template.recipe.execute(executor)
+                logViaInterface("Executing project template recipe (ID: ${template.templateId})...\n")
 
-                if (result is ProjectTemplateRecipeResult) {
-                    // Call back to dialog to inform it and proceed with next steps (like Gemini flow)
-                    // The actual next step (Gemini file selection) will be triggered by the callback in FileEditorDialog
-                    dialogInterface.activity?.runOnUiThread {
-                        onComplete(result.data.projectDir)
-                        // The dialog will then call its own onTemplateProjectCreated or directly proceed
+                val result: ProjectTemplateRecipeResult? = template.recipe.execute(executor)
+
+                if (result?.data?.projectDir != null) {
+                    val createdProjectDir = result.data.projectDir
+
+                    (fileEditorInterface as? FileEditorActivity)?.onTemplateProjectCreated(createdProjectDir, appName, "N/A")
+                    fileEditorInterface.runOnUiThread {
+                        onComplete(createdProjectDir)
                     }
                 } else {
-                    throw IOException("Template execution failed. Result: $result")
+                    // The TemplateRecipeExecutor you provided doesn't have an 'output' property.
+                    // We can log a generic message.
+                    val failureMessage = "Template execution failed or did not return project directory. Result: $result."
+                    Log.e(TAG, failureMessage)
+                    throw IOException(failureMessage)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error creating project from template", e)
-                errorHandler("Failed to create project from template: ${e.message}", e)
+                errorViaInterface("Failed to create project template: ${e.message}", e)
+                fileEditorInterface.setState(FileEditorActivity.WorkflowState.ERROR)
             }
         }
     }
@@ -104,8 +122,6 @@ class ProjectOperationsHandler(
     }
 
     fun listExistingProjectNames(): List<String> {
-        return projectsBaseDir.listFiles { file ->
-            file.isDirectory // Basic check
-        }?.map { it.name }?.sorted() ?: emptyList()
+        return projectsBaseDir.listFiles { file -> file.isDirectory }?.map { it.name }?.sorted() ?: emptyList()
     }
 }

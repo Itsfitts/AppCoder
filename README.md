@@ -18,16 +18,7 @@
     *   Sign in and click "Create API key". Copy this key ideally to your phones clipboard.
 
 3.  **📲 Install & Use AppCoder:**
-    *   Transfer the downloaded `.apk` file to your Android phone.
-    *   On your phone, open a file manager, find the `.apk`, and tap to install.
-        *   You might need to **enable "Install from unknown sources"** in your phone's settings.
-        *   On newer phones you can save some time by disabling the "Google Play Protect" feature since all it does is asking you for each install of your selfe build apps to confirm your identity.
-    *   After AppCoder installs and completes its initial setup (grant permissions, wait for installation of all the dependencies):
-        *   Tap the **🔵 blue plus (+) button**.
-        *   Enter an **App Name**, a **simple App Description** (keep it simple for now more complex apps will be possible in the future), paste your **Gemini API Key** and press "Generate App".
-    *   After code generation by the LLM, press **continue to build**.
-    *   When installing your *generated app*, you might need to **expand the installation popup to find and select "Install anyway"**.
-    *   When you have build your first app and tested its functionality you might want to modify it. You can do that the same way you created the new app but instead of choosing a new app name you search for the existing one you want to modefy. **!Attention! Currently this overrides the existing app and might break it, there is no "save previous version" feature implemented yet.** 
+    *   See the **[latest release page](https://github.com/ChristophGeske/AppCoder/releases)** for instructions.
 
 ---
 
@@ -44,11 +35,12 @@ Simply describe your app vision, and AppCoder handles the code generation.
 Export the generated code to continue development on a desktop with professional tools.
 
 **What is AppCoder able to do?**
-*   **Not much yet:** Since it is the first version many issues are not resolved and you are only able to generate very simple apps.
-*   Some examples that should worked in the current state are a Tiktokto game or a dice simulator for example
-*   If the app is to complicated is to complex the LLM likely introduces to many errors and the build might fail or the installation fails or the installed app crashes on start or contains to major bugs.
-*   Currently only existing files can be overriden limiting what you can do. For example a simple snake game would likely require more files and therefore always fails.
-*   After the first build which takes longer follow up builds take around 50 seconds on a modern phone from posting your app description to having the finished app installed on your phone.
+*   Currently the limiting factor determining how complex the app can get is the LLM running in the background.
+*   The default LLM in this app is Gemini 2.5 Flash with Thinking maximised. This flash model is free and able to do very simple apps like a ToDo list app or a tic-tac-toe game.
+*   Using Gemini 2.5 Pro should make significantly more complex apps possible but is not free.
+*   A free and fast way to make more complex apps possible is by using Claude Sonnet 4 with Artefacts enabled. In the Antropic app you can quickly iterate over your app idea using the Artifacts view and programming in HTML until all your app elements stand. If Claude is done making the HTML version of your app prompt it to translate the HTML code into Android code. Then copy and past the code into the prompt field of AppCoder. Gemini 2.5 Flash running inside AppCoder seems capable enough to create a working android app from this code. By using Claude Sonnet 4 with artefacts you can itterate quickly much faster then weiting and installing the aandroid app first. Also the Sonnet 4 model creates much better code compared to Gemini 2.5 Flash. This way more complex apps like a Tetris game become possible for free.
+*   If the app is to complex however the LLM can fail and introduces to many errors so that the build might fails or the installation fails or the installed app crashes on start or the app contains major bugs.
+*   After the first build which takes much longer follow up builds take around 60 seconds on a modern phone from posting your app description to having the finished app installed on your phone.
 ---
 
 

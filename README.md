@@ -36,20 +36,11 @@ Export the generated code to continue development on a desktop with professional
 
 **What is AppCoder able to do?**
 *   Currently the limiting factor determining how complex the app can get is the LLM running in the background.
-*   The default LLM in this app is Gemini 2.5 Flash with Thinking budget maximised. This Gemini flash model is free and able to do very simple apps like a ToDo list app or a tic-tac-toe game.
-*   Using Gemini 2.5 Pro should make significantly more complex apps possible but it is not free.
-*   A free and fast way to make more complex apps possible is by using Claude Sonnet 4 with artefacts enabled. In the Antropic app you can quickly itterate over your app idea using the artifacts view. By programming in HTML you see the results almost immediately and quicker then itterating in the AppCoder app. If Claude is done making the HTML version of your app prompt it to translate the HTML code into Android code. Then copy and past the code into the prompt field of AppCoder. Gemini 2.5 Flash running inside AppCoder seems capable enough to create a working android app from this code. The Sonnet 4 model creates much better code compared to Gemini 2.5 Flash. This way more complex apps like a Tetris game become possible for free.
-*   If the app is to complex however the LLM can fail and introduce to many errors so that the build fails or the installation fails or the installed app crashes on start or the app contains major bugs.
-*   After the first build which takes much longer follow up builds take around 60 seconds on a modern phone from posting your app description to having the finished app installed on your phone.
----
-
-
-## ⚠️ Important Notes & Known Issues (MVP v1.0.0) [Bug fixes are planned 🛠️] 
-
-*   **AppCoder's Initial Setup:**
-    *   The first run of AppCoder installs necessary components. This can occasionally fail. **Reinstalling the AppCoder `.apk` usually fixes this.**
-    *   When you close the app during the initial setup, you might get stuck on the initial start screen. If stuck during initial setup, reinstall AppCoder to start the setup process again. 
-*   **Modify Function:** Modifying existing apps is not working currently. All apps are one shot they either work on first generation or not.
+*   The default LLM in this app is Gemini 2.5 Flash with Thinking budget maximised. This Gemini flash model is free and able to do simple apps like a ToDo list app, a tic-tac-toe or even Tetris game.
+*   Using Gemini 2.5 Pro should make significantly more complex apps possible but it is not free and would requires you to set up a google billing account.
+*   A free and fast way to make more complex apps possible is by using Claude Sonnet 4 with artefacts enabled. In the Antropic app you can quickly itterate over your app idea using the artifacts view. By programming in HTML you see the results almost immediately and quicker then itterating in the AppCoder app where one itteration takes around 60 seconds. If Claude is done making the HTML version of your app you can prompt Claude to translate the HTML code into Android code. Then copy and past the code into the prompt field of AppCoder. Gemini 2.5 Flash running inside AppCoder seems capable enough to create a working android app from this code. The Sonnet 4 model creates much better code compared to Gemini 2.5 Flash. This way more complex apps become possible for free.
+*   If the app is to complex however the LLM can fail by not generating usefull code at all or introduce to many errors so that the build fails or the installation fails or the installed app crashes on start or the app contains major bugs. In short there are many ways failiours can happen.
+*   After the first build which takes much longer around 10 minutes, follow up builds take around 60 seconds on a modern phone from posting your app description to having the finished app installed on your phone.
 
 ---
 
@@ -61,7 +52,7 @@ This might be interested for you if you want to implement your own LLM API calls
 
 1.  **Clone this repository.**
 2.  **Connect your Android smartphone** to your computer.
-3.  **Build and install the AppCoder APK** onto your phone using **Android Studio Meerkat 2024.3.2**.
+3.  **Build and install the AppCoder APK** onto your phone use **Android Studio Meerkat 2024.3.2** to match my setup and avoide version issues.
 4.  **Development Setup Notes:**
     *   **Gradle JDK:** JDK 21.
 5.  **Troubleshooting Builds from Source:**

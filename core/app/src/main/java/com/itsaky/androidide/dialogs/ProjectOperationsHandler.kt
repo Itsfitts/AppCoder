@@ -1,40 +1,38 @@
-package com.itsaky.androidide.dialogs // Your package for this handler
+package com.itsaky.androidide.dialogs
 
 import android.util.Log
 import com.itsaky.androidide.models.NewProjectDetails
 import com.itsaky.androidide.templates.Language
-import com.itsaky.androidide.templates.ProjectTemplate // For type of 'template'
+import com.itsaky.androidide.templates.ProjectTemplate
 import com.itsaky.androidide.templates.ProjectTemplateRecipeResult
-import com.itsaky.androidide.templates.RecipeExecutor // The interface for the executor type
+import com.itsaky.androidide.templates.RecipeExecutor
 import com.itsaky.androidide.templates.Sdk
-import com.itsaky.androidide.templates.Parameter // Base class for parameters
-// TemplateRecipe is implicitly used via template.recipe
+import com.itsaky.androidide.templates.Parameter
 import com.itsaky.androidide.templates.impl.basicActivity.basicActivityProject
-// CORRECTED IMPORT for your production TemplateRecipeExecutor
 import com.itsaky.androidide.utils.TemplateRecipeExecutor
-
-// Specific parameter types
 import com.itsaky.androidide.templates.StringParameter
 import com.itsaky.androidide.templates.EnumParameter
 import com.itsaky.androidide.templates.BooleanParameter
-
 import java.io.File
 import java.io.IOException
 import java.util.Locale
 import kotlin.concurrent.thread
+import com.itsaky.androidide.dialogs.ViewModelFileEditorBridge // Ensure this import is present
+import com.itsaky.androidide.dialogs.AiWorkflowState // Ensure this import is present
 
 class ProjectOperationsHandler(
     private val projectsBaseDir: File,
     private val directLogAppender: (String) -> Unit,
     private val directErrorHandler: (String, Exception?) -> Unit,
-    private val fileEditorInterface: FileEditorInterface
+    private val bridge: ViewModelFileEditorBridge // Correct: uses ViewModelFileEditorBridge
 ) {
     companion object {
         private const val TAG = "ProjectOpsHandler"
     }
 
-    private fun logViaInterface(message: String) = fileEditorInterface.appendToLog(message)
-    private fun errorViaInterface(message: String, e: Exception?) = fileEditorInterface.handleError(message, e)
+    // logViaInterface and errorViaInterface now use the bridge
+    private fun logViaBridge(message: String) = bridge.appendToLogBridge(message)
+    private fun errorViaBridge(message: String, e: Exception?) = bridge.handleErrorBridge(message, e)
 
     fun projectExists(appName: String): Boolean {
         if (appName.isBlank()) return false
@@ -42,34 +40,35 @@ class ProjectOperationsHandler(
         return projectDir.exists() && projectDir.isDirectory
     }
 
-    fun createNewProjectFromTemplate(appName: String, onComplete: (projectDir: File) -> Unit) {
-        logViaInterface("Starting new project template creation for: $appName\n")
-        fileEditorInterface.setState(FileEditorActivity.WorkflowState.CREATING_PROJECT_TEMPLATE)
+    fun createNewProjectFromTemplate(appName: String, onCompleteBackground: (projectDir: File) -> Unit) { // onComplete can be used by ViewModel for background tasks if needed
+        logViaBridge("Starting new project template creation for: $appName\n")
+        bridge.updateStateBridge(AiWorkflowState.CREATING_PROJECT_TEMPLATE)
 
-        thread {
+        thread { // Perform template creation on a background thread
             try {
                 val packageName = createPackageName(appName)
                 val projectDir = File(projectsBaseDir, appName)
+
                 if (projectDir.exists()) {
-                    errorViaInterface("Project directory '$appName' already exists.", null)
-                    fileEditorInterface.setState(FileEditorActivity.WorkflowState.IDLE)
+                    errorViaBridge("Project directory '$appName' already exists.", null)
+                    // State update will be handled by errorViaBridge -> bridge.updateStateBridge
                     return@thread
                 }
 
-                logViaInterface("Package Name: $packageName\n")
-                logViaInterface("Save Location: ${projectDir.absolutePath}\n")
+                logViaBridge("Package Name: $packageName\n")
+                logViaBridge("Save Location: ${projectDir.absolutePath}\n")
 
                 val projectDetails = NewProjectDetails().apply {
                     this.name = appName
                     this.packageName = packageName
-                    this.minSdk = 21
-                    this.targetSdk = 34
-                    this.language = "kotlin"
+                    this.minSdk = 21 // Example, ensure these are correct
+                    this.targetSdk = 34 // Example
+                    this.language = "kotlin" // Example
                     this.savePath = projectsBaseDir.absolutePath
                 }
 
-                val template: ProjectTemplate = basicActivityProject()
-
+                val template: ProjectTemplate = basicActivityProject() // Ensure this is valid
+                // ... (Parameter setting logic remains the same)
                 val iterator = template.parameters.iterator()
                 try {
                     (iterator.next() as? StringParameter)?.setValue(projectDetails.name)
@@ -87,31 +86,25 @@ class ProjectOperationsHandler(
                     throw IOException("Failed to set template parameters using iterator: ${e.message}", e)
                 }
 
-                // CORRECTED: Instantiating TemplateRecipeExecutor from com.itsaky.androidide.utils
-                val executor: RecipeExecutor = TemplateRecipeExecutor()
 
-                logViaInterface("Executing project template recipe (ID: ${template.templateId})...\n")
-
+                val executor: RecipeExecutor = TemplateRecipeExecutor() // Ensure this is correctly imported and works
+                logViaBridge("Executing project template recipe (ID: ${template.templateId})...\n")
                 val result: ProjectTemplateRecipeResult? = template.recipe.execute(executor)
 
                 if (result?.data?.projectDir != null) {
                     val createdProjectDir = result.data.projectDir
-
-                    (fileEditorInterface as? FileEditorActivity)?.onTemplateProjectCreated(createdProjectDir, appName, "N/A")
-                    fileEditorInterface.runOnUiThread {
-                        onComplete(createdProjectDir)
-                    }
+                    // Use the bridge to notify completion, which runs on UI thread via ViewModel
+                    bridge.onTemplateProjectCreatedBridge(createdProjectDir, appName, "N/A" /*appDescription if available*/)
+                    onCompleteBackground(createdProjectDir) // Call the background completion too
                 } else {
-                    // The TemplateRecipeExecutor you provided doesn't have an 'output' property.
-                    // We can log a generic message.
                     val failureMessage = "Template execution failed or did not return project directory. Result: $result."
-                    Log.e(TAG, failureMessage)
+                    Log.e(TAG, failureMessage) // Internal log
                     throw IOException(failureMessage)
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error creating project from template", e)
-                errorViaInterface("Failed to create project template: ${e.message}", e)
-                fileEditorInterface.setState(FileEditorActivity.WorkflowState.ERROR)
+                Log.e(TAG, "Error creating project from template", e) // Internal log
+                errorViaBridge("Failed to create project template: ${e.message}", e)
+                // State update to ERROR is handled by errorViaBridge
             }
         }
     }
@@ -122,6 +115,7 @@ class ProjectOperationsHandler(
     }
 
     fun listExistingProjectNames(): List<String> {
+        // This can run on a background thread if called from ViewModel's IO scope
         return projectsBaseDir.listFiles { file -> file.isDirectory }?.map { it.name }?.sorted() ?: emptyList()
     }
 }

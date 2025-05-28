@@ -154,8 +154,8 @@ class GeminiHelper(
         }
 
         val generationConfigObject = JSONObject().apply {
-            put("temperature", 0.5)
-            put("maxOutputTokens", 8192)
+            put("temperature", 1)
+            put("maxOutputTokens", 90000)
             put("topP", 0.95)
             put("topK", 40)
 

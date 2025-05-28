@@ -3,13 +3,12 @@ package com.itsaky.androidide.dialogs // Adjust package if needed
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONException
+import org.json.JSONObject
 import java.io.File
 import java.io.FileReader
 import java.io.IOException
 import java.util.Locale
-// Ensure ProjectFileUtils is correctly imported
-import com.itsaky.androidide.dialogs.ProjectFileUtils // If in this package
-// import com.itsaky.androidide.utils.ProjectFileUtils // If in a utils package
+import com.itsaky.androidide.dialogs.ProjectFileUtils
 
 class GeminiWorkflowCoordinator(
     private val geminiHelper: GeminiHelper,
@@ -23,6 +22,9 @@ class GeminiWorkflowCoordinator(
 
     private val conversation = GeminiConversation()
     private val selectedFilesForModification = mutableListOf<String>()
+    private var lastAppDescriptionForFallback: String = ""
+    private var lastAppNameForFallback: String = ""
+    private var lastFileContextForFallback: String = "" // Changed from lastFileContentsForFallback for clarity
 
     private fun logViaInterface(message: String) = fileEditorInterface.appendToLog(message)
 
@@ -31,7 +33,10 @@ class GeminiWorkflowCoordinator(
         conversation.clear()
         selectedFilesForModification.clear()
         fileEditorInterface.currentProjectDir = projectDir
-        fileEditorInterface.displayAiConclusion(null) // Clear previous conclusion at the start
+        fileEditorInterface.displayAiConclusion(null)
+
+        lastAppNameForFallback = appName
+        lastAppDescriptionForFallback = appDescription
 
         fileEditorInterface.setState(FileEditorActivity.WorkflowState.SELECTING_FILES)
         identifyFilesToModify(appName, appDescription, projectDir)
@@ -63,7 +68,7 @@ class GeminiWorkflowCoordinator(
         }
         val isExisting = fileEditorInterface.isModifyingExistingProjectInternal
         val promptContext = if (isExisting) "modifying an existing Android app" else "working with a basic Android app template I just created"
-        val actionVerb = if (isExisting) "MODIFY or CREATE" else "CREATED or significantly MODIFIED"
+        val actionVerb = if (isExisting) "MODIFY or CREATE" else "CREATE or significantly MODIFY"
 
         val prompt = """
             I am $promptContext called "$appName".
@@ -77,7 +82,7 @@ class GeminiWorkflowCoordinator(
         """.trimIndent()
 
         conversation.addUserMessage(prompt)
-        logViaInterface("Asking AI to select relevant files...\n")
+        logViaInterface("Asking AI to select relevant files (expecting JSON array)...\n")
 
         geminiHelper.sendGeminiRequest(
             contents = conversation.getContentsForApi(),
@@ -85,31 +90,34 @@ class GeminiWorkflowCoordinator(
                 fileEditorInterface.runOnUiThread {
                     try {
                         val responseText = geminiHelper.extractTextFromGeminiResponse(response)
+                        Log.d(TAG, "Raw AI file selection response: $responseText")
                         logViaInterface("AI file selection response received.\n")
                         val jsonArrayText = geminiHelper.extractJsonArrayFromText(responseText)
                         val jsonArray = JSONArray(jsonArrayText)
                         selectedFilesForModification.clear()
                         for (i in 0 until jsonArray.length()) {
-                            selectedFilesForModification.add(jsonArray.getString(i))
+                            jsonArray.getString(i).takeIf { it.isNotBlank() }?.let {
+                                selectedFilesForModification.add(it)
+                            }
                         }
-                        conversation.addModelMessage(responseText)
+                        conversation.addModelMessage(responseText) // Add AI's raw JSON array string
 
                         if (selectedFilesForModification.isEmpty()) {
-                            logViaInterface("⚠️ AI did not select/suggest any files. Project remains as is.\n")
-                            fileEditorInterface.setState(FileEditorActivity.WorkflowState.READY_FOR_ACTION)
+                            logViaInterface("⚠️ AI did not select/suggest any files. Will proceed and ask AI to generate necessary files based on description.\n")
                         } else {
                             logViaInterface("AI selected/suggested ${selectedFilesForModification.size} files:\n${selectedFilesForModification.joinToString("\n") { "  - $it" }}\n")
-                            loadSelectedFilesAndAskForCode(appName, appDescription)
                         }
+                        loadSelectedFilesAndAskForCode(appName, appDescription)
                     } catch (e: IllegalArgumentException) {
-                        directErrorHandler("AI did not provide a valid list of files: ${e.message}", e)
+                        directErrorHandler("AI did not provide a valid list of files for selection: ${e.message}. Response: ${geminiHelper.extractTextFromGeminiResponse(response)}", e)
                     } catch (e: JSONException) {
-                        directErrorHandler("Failed to parse AI's file selection as JSON: ${e.message}", e)
+                        directErrorHandler("Failed to parse AI's file selection as JSON: ${e.message}. Response: ${geminiHelper.extractTextFromGeminiResponse(response)}", e)
                     } catch (e: Exception) {
                         directErrorHandler("Unexpected error during file selection: ${e.message}", e)
                     }
                 }
-            }
+            },
+            responseMimeTypeOverride = "application/json"
         )
     }
 
@@ -121,7 +129,7 @@ class GeminiWorkflowCoordinator(
 
         fileEditorInterface.setState(FileEditorActivity.WorkflowState.GENERATING_CODE)
         logViaInterface("Gemini Workflow Step: Loading selected files for code generation...\n")
-        val fileContents = mutableMapOf<String, String>()
+        val fileContentsMap = mutableMapOf<String, String>()
         val missingOrUnreadableFiles = mutableListOf<String>()
 
         for (filePath in selectedFilesForModification) {
@@ -129,25 +137,26 @@ class GeminiWorkflowCoordinator(
             if (!file.exists() || !file.isFile) {
                 logViaInterface("Note: File '$filePath' not found. Will ask AI to create it.\n")
                 missingOrUnreadableFiles.add(filePath)
-                fileContents[filePath] = "// File: $filePath (This file does not exist yet. Please provide its complete content.)"
+                fileContentsMap[filePath] = "// File: $filePath (This file is new or was not found. Please provide its complete content based on the app description.)"
             } else {
                 try {
-                    fileContents[filePath] = FileReader(file).use { it.readText() }
+                    fileContentsMap[filePath] = FileReader(file).use { it.readText() }
                 } catch (e: IOException) {
                     logViaInterface("⚠️ Error reading file $filePath: ${e.message}. Will ask AI to provide content.\n")
                     missingOrUnreadableFiles.add(filePath)
-                    fileContents[filePath] = "// File: $filePath (Error reading existing content. Will ask AI to regenerate.)"
+                    fileContentsMap[filePath] = "// File: $filePath (Error reading existing content. Please regenerate based on the app description and its intended role.)"
                 }
             }
         }
-        if (fileContents.isEmpty() && selectedFilesForModification.isNotEmpty()) {
-            logViaInterface("All selected files are new or were unreadable. AI will generate content from scratch.\n")
-        } else if (fileContents.isEmpty() && selectedFilesForModification.isEmpty()) {
-            directErrorHandler("No files selected or loaded for code generation.", null)
-            return
+
+        if (fileContentsMap.isEmpty() && selectedFilesForModification.isNotEmpty()) {
+            logViaInterface("All files selected by AI are new or were unreadable. AI will generate their content.\n")
+        } else if (fileContentsMap.isEmpty() && selectedFilesForModification.isEmpty()){
+            logViaInterface("No files were selected by AI (or project is empty). AI will be prompted to generate necessary files from scratch based on description.\n")
+        } else {
+            logViaInterface("Loaded/identified ${fileContentsMap.size} files for AI processing.\n")
         }
-        logViaInterface("Loaded/identified ${fileContents.size} files for AI processing.\n")
-        sendGeminiCodeGenerationPrompt(appName, appDescription, fileContents, missingOrUnreadableFiles)
+        sendGeminiCodeGenerationPrompt(appName, appDescription, fileContentsMap, missingOrUnreadableFiles)
     }
 
     private fun sendGeminiCodeGenerationPrompt(
@@ -155,101 +164,268 @@ class GeminiWorkflowCoordinator(
         fileContentsMap: Map<String, String>, missingFilesList: List<String>
     ) {
         val filesContentText = buildString {
-            fileContentsMap.forEach { (path, content) -> append("FILE: $path\n```\n$content\n```\n\n") }
+            if (fileContentsMap.isNotEmpty()) {
+                fileContentsMap.forEach { (path, content) -> append("FILE: $path\n```\n$content\n```\n\n") }
+            } else {
+                append("No existing file content is provided. You will need to generate all necessary files from scratch based on the app description.\n")
+            }
         }
+        lastFileContextForFallback = filesContentText
+
         val creationNote = if (missingFilesList.isNotEmpty()) {
-            "The following files were identified as needing creation or were unreadable; please provide their full content:\n${missingFilesList.joinToString("\n") { "- $it" }}\n\n"
+            "The following files were explicitly identified as needing creation or were unreadable; please provide their full content:\n${missingFilesList.joinToString("\n") { "- $it" }}\n\n"
+        } else if (fileContentsMap.isEmpty()) {
+            "Since no specific files were pre-selected or their content provided, determine the essential files and their complete content to realize the app's goal.\n"
         } else ""
+
         val isExisting = fileEditorInterface.isModifyingExistingProjectInternal
-        val packageNameInstruction: String = if (isExisting) {
-            val inferredPackageName = fileContentsMap.entries
-                .firstOrNull { (path, _) -> path.endsWith(".kt") && !missingFilesList.contains(path) }
-                ?.value?.let { Regex("""^\s*package\s+([a-zA-Z0-9_.]+)""").find(it)?.groupValues?.get(1) } ?: "com.example.unknown"
-            "If creating new Kotlin/Java files, use an appropriate existing package (e.g., derived from '$inferredPackageName') or a new sub-package."
-        } else {
-            val sanitizedAppName = appName.filter { it.isLetterOrDigit() }.lowercase(Locale.getDefault()).ifEmpty { "myapp" }
-            "Pay attention to package names if creating new Kotlin/Java files (e.g., `com.example.$sanitizedAppName`)."
-        }
+        val currentPackageName = ProjectFileUtils.findCommonPackageName(fileEditorInterface.currentProjectDir, appName, fileContentsMap.values.toList())
+
+        val packageNameInstruction = "If creating new Kotlin/Java files, use an appropriate package name (e.g., '$currentPackageName' or a sub-package like '$currentPackageName.feature'). Ensure `AndroidManifest.xml` uses '$currentPackageName'."
+
         val prompt = """
             You are an expert Android App Developer. Your task is to modify or create files for an Android app named "$appName".
             The primary goal of this app is: "$appDescription"
-            $creationNote Important: For any file you provide content for, ensure it is the *complete and valid* content for that file.
-            Current file contents (or placeholders for new/unreadable files):
+
+            $creationNote
+            Current file context (content of files selected for modification, or placeholders/notes for new files):
             $filesContentText
+
             Instructions:
-            1. Review the app description and the provided file contents/placeholders.
-            2. For each file listed (or new files you deem necessary), provide its FULL, UPDATED, and VALID content.
-            3. If new dependencies are implied, add them to `app/build.gradle.kts` (or `app/build.gradle`).
-            4. Ensure Kotlin code is idiomatic and XML layouts are well-formed.
+            1. Review the app description and the provided file context.
+            2. Determine the necessary file modifications:
+                - For existing files, provide their FULL, UPDATED, and VALID content.
+                - For new files essential to the app's goal, provide their FULL and VALID content including the correct relative path (e.g., "app/src/main/java/$currentPackageName/MyActivity.kt").
+            3. If new dependencies are implied (e.g., new libraries), add them to `app/build.gradle.kts` (or `app/build.gradle`).
+            4. Ensure Kotlin/Java code is idiomatic and XML layouts are well-formed.
             5. $packageNameInstruction
-            6. Only output content for files that need changes or creation.
-            7. If your changes make any existing files (especially XML layouts) obsolete, list their full project-relative paths for DELETION.
-            8. **After all file and deletion instructions, provide a concise summary of the changes you made as a bullet list, formatted for easy reading. This summary will be shown to the user.**
+            6. If your changes make any existing files obsolete, identify them for deletion.
+            7. **Provide a concise summary of the changes you made. This summary will be shown to the user. It is important to include this.**
 
-            Format your response STRICTLY as follows:
-            Each modified/created file block must start with `FILE: path/to/file.ext`, followed by a fenced code block.
-            ```
-            FILE: path/to/file.ext
-            `[optional language hint]`
-            // Complete file content
-            `
-            ```
-            (Repeat for each file to modify/create)
+            Your response MUST be a single JSON object matching the schema provided by the API.
+            The JSON object should have three optional top-level keys:
+            - "filesToWrite": An array of objects, where each object has "filePath" (string) and "fileContent" (string).
+            - "filesToDelete": An array of strings, where each string is a relative file path to delete.
+            - "conclusion": A string containing your summary of changes. THIS IS IMPORTANT.
 
-            If there are files to delete, after all FILE blocks, add `DELETE_FILES:` followed by a JSON array of strings.
-            Example: DELETE_FILES: ["app/src/main/res/layout/old.xml"]
-            If no files to delete, OMIT DELETE_FILES or use `DELETE_FILES: []`.
+            Example of a file to write entry within "filesToWrite":
+            { "filePath": "app/src/main/java/$currentPackageName/MainActivity.kt", "fileContent": "package $currentPackageName;\n\n// ... rest of the Kotlin code ..." }
 
-            Finally, after all FILE and DELETE_FILES blocks, add a `CONCLUSION:` block followed by your summary in a fenced code block (markdown with bullets is good).
-            Example of CONCLUSION block:
-            ```
-            CONCLUSION:
-            `
-            - Refactored user authentication to use a new service.
-            - Added a settings screen with theme selection.
-            - Updated dependencies for Material Design 3.
-            - Deleted obsolete `OldAuthManager.kt`.
-            `
-            ```
+            Ensure all file content is complete and does not use placeholders like "// ... rest of the code ...".
+            Ensure the "conclusion" field is populated with a meaningful summary. If no other changes, a summary like "No code changes were made." is acceptable.
         """.trimIndent()
 
         conversation.addUserMessage(prompt)
-        logViaInterface("Sending file contents to AI for code generation...\n")
+        logViaInterface("Sending file context to AI for structured code generation...\n")
+
         geminiHelper.sendGeminiRequest(
             contents = conversation.getContentsForApi(),
             callback = { response ->
                 fileEditorInterface.runOnUiThread {
                     try {
-                        val responseText = geminiHelper.extractTextFromGeminiResponse(response)
-                        conversation.addModelMessage(responseText)
-                        logViaInterface("AI responded with code modifications.\n")
-                        applyCodeChanges(responseText)
+                        val responseJsonText = geminiHelper.extractTextFromGeminiResponse(response)
+                        if (responseJsonText.isBlank()) {
+                            directErrorHandler("AI returned an empty response for structured code generation.", null)
+                            // Potentially trigger fallback here too if desired, or straight to error
+                            fileEditorInterface.setState(FileEditorActivity.WorkflowState.ERROR)
+                            return@runOnUiThread
+                        }
+                        Log.i(TAG, "Raw structured JSON response from AI (Main Generation): \n$responseJsonText")
+                        conversation.addModelMessage(responseJsonText)
+                        logViaInterface("AI responded with structured data.\n")
+
+                        val modifications = geminiHelper.parseAndConvertStructuredResponse(responseJsonText)
+
+                        if (modifications.filesToWrite.isEmpty()) {
+                            logViaInterface("⚠️ AI's structured response did not include any files to write. Attempting fallback for files...\n")
+                            sendGeminiFallbackFileRequest(modifications) // Pass full initial modifications
+                        } else {
+                            applyCodeChanges(modifications)
+                        }
+
                     } catch (e: Exception) {
-                        directErrorHandler("Failed during AI code generation response: ${e.message}", e)
+                        directErrorHandler("Failed during structured AI code generation response processing: ${e.message}", e)
+                        fileEditorInterface.setState(FileEditorActivity.WorkflowState.ERROR)
                     }
                 }
-            }
+            },
+            responseSchemaJson = geminiHelper.getFileModificationsSchema(),
+            responseMimeTypeOverride = "application/json"
         )
     }
 
-    private fun applyCodeChanges(responseText: String) {
-        val projectDir = fileEditorInterface.currentProjectDir ?: run {
-            directErrorHandler("Project directory is null in applyCodeChanges.", null)
+    private fun sendGeminiFallbackFileRequest(originalModifications: FileModifications) {
+        logViaInterface("Attempting fallback: Asking AI specifically for file content...\n")
+
+        val fallbackPrompt = """
+        The previous attempt to generate code modifications for app '$lastAppNameForFallback' (Goal: "$lastAppDescriptionForFallback") using a comprehensive structured JSON output did not yield any files to write.
+
+        Original file context provided to AI:
+        $lastFileContextForFallback
+
+        Please re-evaluate and provide ONLY the necessary file content.
+        Your response MUST be a single JSON object with one key: "filesToWrite".
+        "filesToWrite" should be an array of objects, where each object has "filePath" (string) and "fileContent" (string).
+        Provide complete and valid content for each file. Do not use placeholders.
+        If, after re-evaluation, you still believe no files need to be written or modified, return an empty "filesToWrite" array or null for it.
+        You DO NOT need to provide "filesToDelete" or "conclusion" in this fallback response.
+        """.trimIndent()
+
+        val fallbackConversation = GeminiConversation().apply {
+            // Provide some context from the main conversation if desired, or keep it minimal
+            // For instance, the initial user request could be useful:
+            // conversation.getContentsForApi().firstOrNull()?.let { addUserMessage(it.getJSONArray("parts").getJSONObject(0).getString("text"))}
+            addUserMessage(fallbackPrompt)
+        }
+
+        geminiHelper.sendGeminiRequest(
+            contents = fallbackConversation.getContentsForApi(),
+            callback = { response ->
+                fileEditorInterface.runOnUiThread {
+                    try {
+                        val fallbackResponseJsonText = geminiHelper.extractTextFromGeminiResponse(response)
+                        if (fallbackResponseJsonText.isBlank()) {
+                            directErrorHandler("AI returned an empty response for fallback file request.", null)
+                            applyCodeChanges(originalModifications) // Proceed with original (empty filesToWrite)
+                            return@runOnUiThread
+                        }
+                        Log.i(TAG, "Raw fallback file response from AI: $fallbackResponseJsonText")
+                        // Don't add to main conversation, this was a side-quest
+
+                        val fallbackFilesMap = geminiHelper.parseMinimalFilesResponse(fallbackResponseJsonText)
+
+                        val finalModifications = if (fallbackFilesMap != null && fallbackFilesMap.isNotEmpty()) {
+                            logViaInterface("✅ Fallback for files successful. AI provided files to write.\n")
+                            originalModifications.copy(filesToWrite = fallbackFilesMap)
+                        } else {
+                            logViaInterface("⚠️ Fallback for files also yielded no files to write.\n")
+                            originalModifications // Stick with original
+                        }
+                        applyCodeChanges(finalModifications)
+                    } catch (e: Exception) {
+                        directErrorHandler("Failed during AI fallback file request processing: ${e.message}", e)
+                        applyCodeChanges(originalModifications) // Proceed with original on error
+                        fileEditorInterface.setState(FileEditorActivity.WorkflowState.ERROR)
+                    }
+                }
+            },
+            responseSchemaJson = geminiHelper.getMinimalFilesSchema(),
+            responseMimeTypeOverride = "application/json"
+        )
+    }
+
+    private fun requestSummaryFromAI(
+        currentModifications: FileModifications,
+        callback: (finalConclusion: String?) -> Unit
+    ) {
+        val generatedFiles = currentModifications.filesToWrite
+        val deletedFiles = currentModifications.filesToDelete
+        val originalConclusion = currentModifications.conclusion
+
+        // If there's already a valid conclusion, or no changes to summarize, return early.
+        if (originalConclusion != null && originalConclusion.isNotBlank()) {
+            callback(originalConclusion)
             return
         }
-        logViaInterface("Gemini Workflow Step: Applying code changes, deletions, and displaying conclusion...\n")
-        val modifications = geminiHelper.parseFileChanges(responseText, directLogAppender)
+        if (generatedFiles.isEmpty() && deletedFiles.isEmpty()) {
+            logViaInterface("No code changes were made, so providing a default summary.\n")
+            callback(originalConclusion ?: "No specific code changes or deletions were performed by the AI.")
+            return
+        }
 
-        // Display conclusion first using the interface method
-        fileEditorInterface.displayAiConclusion(modifications.conclusion)
+        logViaInterface("Attempting to generate a summary for the applied changes via dedicated AI call...\n")
+
+        val changesDescription = buildString {
+            if (generatedFiles.isNotEmpty()) {
+                append("The following files were written or updated:\n")
+                generatedFiles.keys.forEach { path -> append("- ${path.takeLast(50)}\n") } // Show only part of path for brevity
+                append("\nBrief snippets of generated/updated files (first ~100 chars each):\n")
+                generatedFiles.forEach { (path, content) ->
+                    append("File: ${path.takeLast(50)}\n```\n${content.trim().take(100)}${if (content.trim().length > 100) "..." else ""}\n```\n\n")
+                }
+            }
+            if (deletedFiles.isNotEmpty()) {
+                append("The following files were deleted:\n")
+                deletedFiles.forEach { path -> append("- ${path.takeLast(50)}\n") }
+            }
+        }
+
+        val summaryPrompt = """
+            Based on the following code modifications for the app "$lastAppNameForFallback" (Goal: "$lastAppDescriptionForFallback"), please provide a concise, user-friendly summary.
+            Focus on what was achieved or changed from a user or developer perspective.
+
+            Modifications Overview:
+            $changesDescription
+
+            Your response MUST be a single JSON object with one REQUIRED key: "summary" (string).
+            Example: { "summary": "Refactored the main activity for clarity and updated the user profile layout to include an email field." }
+        """.trimIndent()
+
+        val summaryConversation = GeminiConversation() // Fresh conversation for this specific task
+        summaryConversation.addUserMessage(summaryPrompt)
+
+        geminiHelper.sendGeminiRequest(
+            contents = summaryConversation.getContentsForApi(),
+            callback = { response ->
+                fileEditorInterface.runOnUiThread {
+                    try {
+                        val summaryResponseJsonText = geminiHelper.extractTextFromGeminiResponse(response)
+                        Log.i(TAG, "Raw summary generation response from AI: $summaryResponseJsonText")
+                        if (summaryResponseJsonText.isBlank()) {
+                            directErrorHandler("AI returned an empty response for summary generation.", null)
+                            callback(originalConclusion ?: "Summary generation failed.")
+                            return@runOnUiThread
+                        }
+                        val newSummary = geminiHelper.parseSummaryResponse(summaryResponseJsonText)
+                        if (newSummary != null && newSummary.isNotBlank()) {
+                            logViaInterface("✅ AI generated a summary successfully.\n")
+                            callback(newSummary)
+                        } else {
+                            logViaInterface("⚠️ AI failed to generate a valid summary string, using original/default.\n")
+                            callback(originalConclusion ?: "AI could not provide a summary for the changes.")
+                        }
+                    } catch (e: Exception) {
+                        directErrorHandler("Failed during AI summary generation processing: ${e.message}", e)
+                        callback(originalConclusion ?: "Error during summary generation.")
+                        fileEditorInterface.setState(FileEditorActivity.WorkflowState.ERROR)
+                    }
+                }
+            },
+            responseSchemaJson = geminiHelper.getSummaryOnlySchema(),
+            responseMimeTypeOverride = "application/json"
+        )
+    }
+
+    private fun applyCodeChanges(modifications: FileModifications) {
+        val projectDir = fileEditorInterface.currentProjectDir ?: run {
+            directErrorHandler("Project directory is null in applyCodeChanges.", null)
+            fileEditorInterface.setState(FileEditorActivity.WorkflowState.ERROR)
+            return
+        }
+        logViaInterface("Gemini Workflow Step: Applying code changes and deletions...\n")
+
+        // Display initial conclusion if present, otherwise clear it for now.
+        if (modifications.conclusion != null && modifications.conclusion.isNotBlank()) {
+            fileEditorInterface.displayAiConclusion(modifications.conclusion)
+        } else {
+            fileEditorInterface.displayAiConclusion(null)
+            logViaInterface("Initial conclusion from AI is missing or empty.\n")
+        }
 
         if (modifications.filesToWrite.isEmpty() && modifications.filesToDelete.isEmpty()) {
-            if (modifications.conclusion == null) {
-                logViaInterface("⚠️ AI did not provide any recognizable file changes, deletions, or conclusion.\n")
+            logViaInterface("AI did not provide any file changes or deletions.\n")
+            // Even if no file changes, if conclusion was also empty, try to get a summary
+            if (modifications.conclusion == null || modifications.conclusion.isBlank()) {
+                logViaInterface("Attempting to generate a summary as no changes and no initial conclusion.\n")
+                requestSummaryFromAI(modifications) { generatedSummary ->
+                    fileEditorInterface.displayAiConclusion(generatedSummary)
+                    fileEditorInterface.setState(FileEditorActivity.WorkflowState.READY_FOR_ACTION)
+                }
             } else {
-                logViaInterface("AI provided a conclusion, but no file changes or deletions were processed.\n")
+                // No file changes, but there was an initial conclusion.
+                fileEditorInterface.displayAiConclusion(modifications.conclusion)
+                fileEditorInterface.setState(FileEditorActivity.WorkflowState.READY_FOR_ACTION)
             }
-            fileEditorInterface.setState(FileEditorActivity.WorkflowState.READY_FOR_ACTION)
             return
         }
 
@@ -260,24 +436,37 @@ class GeminiWorkflowCoordinator(
             directLogAppender
         ) { writeSuccessCount, writeErrorCount, deleteSuccessCount, deleteErrorCount ->
             fileEditorInterface.runOnUiThread {
+                var operationSummary = ""
                 if (writeErrorCount > 0 || deleteErrorCount > 0) {
-                    logViaInterface("⚠️ Some file operations failed. Writes (Success: $writeSuccessCount, Error: $writeErrorCount), Deletes (Success: $deleteSuccessCount, Error: $deleteErrorCount).\n")
+                    operationSummary += "⚠️ Some file operations failed. Writes (Success: $writeSuccessCount, Error: $writeErrorCount), Deletes (Success: $deleteSuccessCount, Error: $deleteErrorCount).\n"
                 }
                 var changesApplied = false
                 if (writeSuccessCount > 0) {
-                    logViaInterface("✅ Successfully applied $writeSuccessCount file content changes.\n")
+                    operationSummary += "✅ Successfully applied $writeSuccessCount file content changes.\n"
                     changesApplied = true
                 }
                 if (deleteSuccessCount > 0) {
-                    logViaInterface("✅ Successfully deleted $deleteSuccessCount files.\n")
+                    operationSummary += "✅ Successfully deleted $deleteSuccessCount files.\n"
                     changesApplied = true
                 }
-                if (!changesApplied && writeErrorCount == 0 && deleteErrorCount == 0 && modifications.conclusion == null) {
-                    logViaInterface("No specific file changes or deletions were processed or provided.\n")
-                } else if (!changesApplied && writeErrorCount == 0 && deleteErrorCount == 0 && modifications.conclusion != null) {
-                    // This case means only a conclusion was provided. The log for it is already handled by displayAiConclusion.
+                logViaInterface(operationSummary.ifBlank { "No specific file operations were logged as successful.\n" })
+
+
+                if (modifications.conclusion == null || modifications.conclusion.isBlank()) {
+                    if (changesApplied || modifications.filesToWrite.isNotEmpty() || modifications.filesToDelete.isNotEmpty()) {
+                        logViaInterface("Initial conclusion missing. Requesting summary generation from AI...\n")
+                        requestSummaryFromAI(modifications) { generatedSummary ->
+                            fileEditorInterface.displayAiConclusion(generatedSummary)
+                            fileEditorInterface.setState(FileEditorActivity.WorkflowState.READY_FOR_ACTION)
+                        }
+                    } else { // No changes applied AND no initial conclusion
+                        fileEditorInterface.displayAiConclusion("No specific code changes were made, and no summary was provided by the AI.")
+                        fileEditorInterface.setState(FileEditorActivity.WorkflowState.READY_FOR_ACTION)
+                    }
+                } else { // Conclusion was present initially
+                    fileEditorInterface.displayAiConclusion(modifications.conclusion)
+                    fileEditorInterface.setState(FileEditorActivity.WorkflowState.READY_FOR_ACTION)
                 }
-                fileEditorInterface.setState(FileEditorActivity.WorkflowState.READY_FOR_ACTION)
             }
         }
     }

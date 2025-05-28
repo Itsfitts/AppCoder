@@ -1,9 +1,11 @@
-package com.itsaky.androidide.dialogs // Assuming it's in the same package, adjust if it's in 'utils'
+package com.itsaky.androidide.dialogs // Your current package for this interface
 
 import android.util.Log
 import java.io.File
+import java.io.FileReader
 import java.io.FileWriter
 import java.io.IOException
+import java.util.Locale // Added for lowercase
 
 object ProjectFileUtils {
 
@@ -23,7 +25,7 @@ object ProjectFileUtils {
         val files = currentDir.listFiles() ?: return
         for (file in files) {
             if (file.isDirectory) {
-                if (file.name in arrayOf("build", ".gradle", ".git", ".idea", "generated")) {
+                if (file.name in arrayOf("build", ".gradle", ".git", ".idea", "generated", "libs", "obj", "bin")) { // Added more common ignores
                     continue
                 }
                 collectFilePaths(baseDir, file, result)
@@ -37,8 +39,8 @@ object ProjectFileUtils {
     }
 
     private fun isCodeFile(filename: String): Boolean {
-        val codeExtensions = arrayOf(".kt", ".java", ".xml", ".gradle", ".properties", ".json", ".md")
-        return codeExtensions.any { filename.lowercase().endsWith(it) }
+        val codeExtensions = arrayOf(".kt", ".java", ".xml", ".gradle", ".kts", ".properties", ".json", ".md") // Added .kts
+        return codeExtensions.any { filename.lowercase(Locale.ROOT).endsWith(it) }
     }
 
     fun processFileChangesAndDeletions(
@@ -55,7 +57,6 @@ object ProjectFileUtils {
 
         logAppender("--- Starting File System Operations ---\n")
 
-        // --- Deletion Phase ---
         if (filesToDelete.isNotEmpty()) {
             logAppender("Deletion Phase: Attempting to delete ${filesToDelete.size} file(s).\n")
             filesToDelete.forEach { relativePath ->
@@ -71,12 +72,17 @@ object ProjectFileUtils {
                                 logAppender("✅ Deleted file: $relativePath\n")
                                 deleteSuccess++
                             } else {
-                                logAppender("⚠️ Failed to delete file (unknown reason, check permissions): $relativePath\n")
+                                logAppender("⚠️ Failed to delete file (unknown reason): $relativePath\n")
                                 deleteError++
                             }
-                        } else if (file.isDirectory) {
-                            logAppender("⚠️ Path for deletion is a directory. Manual deletion required or update logic for recursive delete: $relativePath\n")
-                            deleteError++
+                        } else if (file.isDirectory) { // Simple directory deletion (non-recursive)
+                            if (file.listFiles()?.isEmpty() == true && file.delete()) {
+                                logAppender("✅ Deleted empty directory: $relativePath\n")
+                                deleteSuccess++
+                            } else {
+                                logAppender("⚠️ Path for deletion is a non-empty directory or failed to delete: $relativePath. Manual deletion might be required.\n")
+                                deleteError++
+                            }
                         }
                     } catch (e: SecurityException) {
                         logAppender("⚠️ Security error deleting $relativePath: ${e.message}\n")
@@ -86,7 +92,7 @@ object ProjectFileUtils {
                         deleteError++
                     }
                 } else {
-                    logAppender("ℹ️ File for deletion not found (already deleted or wrong path?): $relativePath\n")
+                    logAppender("ℹ️ File for deletion not found: $relativePath\n")
                 }
             }
             logAppender("Deletion Phase complete. Success: $deleteSuccess, Errors: $deleteError.\n")
@@ -94,7 +100,6 @@ object ProjectFileUtils {
             logAppender("Deletion Phase: No files specified for deletion.\n")
         }
 
-        // --- Writing Phase ---
         if (filesToWrite.isNotEmpty()) {
             logAppender("Writing Phase: Attempting to write/update ${filesToWrite.size} file(s).\n")
             filesToWrite.forEach { (relativePath, content) ->
@@ -108,17 +113,13 @@ object ProjectFileUtils {
                     FileWriter(file).use { it.write(content) }
                     logAppender("✅ Updated/Created file: $relativePath\n")
                     writeSuccess++
-                } catch (e: IOException) { // Catch specific IOException from FileWriter
-                    // CORRECTED HERE:
+                } catch (e: IOException) {
                     logAppender("❌ IO Failed to write $relativePath: ${e.message}\n")
                     writeError++
                 } catch (e: SecurityException) {
-                    // CORRECTED HERE:
                     logAppender("❌ Security exception writing $relativePath: ${e.message}\n")
                     writeError++
-                }
-                catch (e: Exception) { // Broader catch for other unexpected issues
-                    // CORRECTED HERE:
+                } catch (e: Exception) {
                     logAppender("❌ Failed to write $relativePath (Unexpected Error): ${e.message}\n")
                     writeError++
                 }
@@ -130,5 +131,36 @@ object ProjectFileUtils {
 
         logAppender("--- File System Operations Complete ---\n")
         onComplete(writeSuccess, writeError, deleteSuccess, deleteError)
+    }
+
+    // Helper to find a common package name
+    fun findCommonPackageName(projectDir: File?, appName: String, codeFileContents: Collection<String>): String {
+        // 1. Try from AndroidManifest.xml
+        projectDir?.let {
+            val manifestFile = File(it, "app/src/main/AndroidManifest.xml")
+            if (manifestFile.exists()) {
+                try {
+                    val manifestContent = FileReader(manifestFile).use { reader -> reader.readText() }
+                    Regex("""package="([^"]+)"""").find(manifestContent)?.groupValues?.get(1)?.let { packageName ->
+                        if (packageName.isNotBlank()) return packageName
+                    }
+                } catch (e: IOException) {
+                    Log.w(TAG, "Could not read AndroidManifest.xml to find package name", e)
+                }
+            }
+        }
+
+        // 2. Try from existing code files
+        for (content in codeFileContents) {
+            Regex("""^\s*package\s+([a-zA-Z0-9_.]+)""").find(content)?.groupValues?.get(1)?.let { packageName ->
+                if (packageName.isNotBlank() && !packageName.startsWith("java.") && !packageName.startsWith("javax.") && !packageName.startsWith("android.")) {
+                    return packageName
+                }
+            }
+        }
+
+        // 3. Generate a default based on appName
+        val sanitizedAppName = appName.filter { it.isLetterOrDigit() }.lowercase(Locale.getDefault()).ifEmpty { "myapp" }
+        return "com.example.$sanitizedAppName"
     }
 }

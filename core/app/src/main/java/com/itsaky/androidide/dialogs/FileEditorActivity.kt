@@ -25,15 +25,20 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.ViewModelProvider
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
-import com.itsaky.androidide.R
+import com.itsaky.androidide.R // Main R
 import java.io.File
 
 class FileEditorActivity : AppCompatActivity() {
 
     companion object {
-        const val TAG_ACTIVITY = "FileEditorActivity" // Renamed to avoid clash with ViewModel TAG
+        const val TAG_ACTIVITY = "FileEditorActivity"
         const val EXTRA_PROJECTS_BASE_DIR = "projects_base_dir"
         const val RESULT_EXTRA_PROJECT_PATH = "project_path_result"
+
+        // New extras for pre-filling fields
+        const val EXTRA_PREFILL_APP_NAME = "prefill_app_name"
+        const val EXTRA_PREFILL_APP_DESCRIPTION = "prefill_app_description"
+
 
         fun newIntent(context: Context, projectsBaseDir: String): Intent {
             return Intent(context, FileEditorActivity::class.java).apply {
@@ -59,7 +64,6 @@ class FileEditorActivity : AppCompatActivity() {
 
     private lateinit var viewModel: FileEditorViewModel
 
-    // Predefined models and custom option text for the spinner
     private val predefinedModels by lazy {
         listOf(
             DEFAULT_GEMINI_MODEL to "Gemini 2.5 Flash (Default - Preview 05-20)",
@@ -99,18 +103,33 @@ class FileEditorActivity : AppCompatActivity() {
 
         bindViews()
         setupInitialUIValues() // For API key and model from ViewModel's stored prefs
+
+        // --- Handle pre-filled data from Intent ---
+        val prefillAppName = intent.getStringExtra(EXTRA_PREFILL_APP_NAME)
+        val prefillAppDescription = intent.getStringExtra(EXTRA_PREFILL_APP_DESCRIPTION)
+
+        if (prefillAppName != null) {
+            appNameAutocomplete.setText(prefillAppName)
+            // Trigger check for existing project if name is pre-filled
+            viewModel.updateIsModifyingProjectFlag(
+                prefillAppName.isNotEmpty() && (viewModel.existingProjectNames.value?.contains(prefillAppName) == true)
+            )
+        }
+        if (prefillAppDescription != null) {
+            appDescriptionInput.setText(prefillAppDescription)
+        }
+        // --- End of handling pre-filled data ---
+
         setupListeners()
         observeViewModel()
 
-        // Handle back press: if loading, prevent back press or show dialog
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (viewModel.isLoading.value == true) {
                     Toast.makeText(this@FileEditorActivity, "Processing... Please wait.", Toast.LENGTH_SHORT).show()
-                    // Optionally, show a confirmation dialog to cancel
                 } else {
-                    isEnabled = false // Disable this callback
-                    onBackPressedDispatcher.onBackPressed() // Perform default back action
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
                 }
             }
         })
@@ -120,7 +139,7 @@ class FileEditorActivity : AppCompatActivity() {
         if (item.itemId == android.R.id.home) {
             if (viewModel.isLoading.value == true) {
                 Toast.makeText(this@FileEditorActivity, "Processing... Please wait.", Toast.LENGTH_SHORT).show()
-                return true // Consume event
+                return true
             }
             onBackPressedDispatcher.onBackPressed()
             return true
@@ -146,15 +165,15 @@ class FileEditorActivity : AppCompatActivity() {
 
         appDescriptionInput.movementMethod = ScrollingMovementMethod.getInstance()
         logOutput.movementMethod = ScrollingMovementMethod.getInstance()
-        logOutput.keyListener = null // Not editable by user
+        logOutput.keyListener = null
         aiConclusionOutput.movementMethod = ScrollingMovementMethod.getInstance()
-        aiConclusionOutput.keyListener = null // Not editable by user
+        aiConclusionOutput.keyListener = null
     }
 
     private fun setupInitialUIValues() {
         apiKeyInput.setText(viewModel.storedApiKey)
         currentSelectedModelIdInUI = viewModel.storedModelId
-        setupModelSpinnerInternal(viewModel.storedModelId) // Pass initial model ID
+        setupModelSpinnerInternal(viewModel.storedModelId)
     }
     private fun setupModelSpinnerInternal(initialModelId: String) {
         val displayNames = predefinedModels.map { it.second }.toMutableList().also { it.add(customModelOptionText) }
@@ -169,13 +188,12 @@ class FileEditorActivity : AppCompatActivity() {
             customModelInputLayout.visibility = View.GONE
             customModelInput.text = null
         } else {
-            // If not in predefined and not blank, assume it's a custom one
             if (initialModelId.isNotEmpty() && predefinedModels.none { it.first == initialModelId }) {
                 val customIndex = displayNames.indexOf(customModelOptionText)
                 modelSpinner.setSelection(if (customIndex != -1) customIndex else 0, false)
                 customModelInputLayout.visibility = View.VISIBLE
                 customModelInput.setText(initialModelId)
-            } else { // Default to the default model if initial is blank or somehow invalid
+            } else {
                 val defaultIndexInPredefined = predefinedModels.indexOfFirst { it.first == DEFAULT_GEMINI_MODEL }
                 val selection = if (defaultIndexInPredefined != -1) defaultIndexInPredefined else 0
                 modelSpinner.setSelection(selection, false)
@@ -183,7 +201,6 @@ class FileEditorActivity : AppCompatActivity() {
                 currentSelectedModelIdInUI = predefinedModels.getOrNull(selection)?.first ?: DEFAULT_GEMINI_MODEL
             }
         }
-        // Listener is in setupListeners
     }
 
 
@@ -200,7 +217,8 @@ class FileEditorActivity : AppCompatActivity() {
                 if (apiKey.isBlank()) { apiKeyInput.error = "API Key required"; valid = false } else { apiKeyInput.error = null }
                 (appNameAutocomplete.parent.parent as? TextInputLayout)?.error = if (appName.isEmpty()) "App name required" else null
                 if (appName.isEmpty()) valid = false
-                appDescriptionInput.error = if (appDescription.isEmpty()) "App description required" else null
+                appDescriptionInput.error = if (appDescription.isEmpty()) "App description required" else null // Corrected: Was appDescriptionInput.error, should be (appDescriptionInput.parent.parent as? TextInputLayout)?.error
+                (appDescriptionInput.parent.parent as? TextInputLayout)?.error = if (appDescription.isEmpty()) "App description required" else null
                 if (appDescription.isEmpty()) valid = false
 
                 if (selectedModelId.isBlank() && customModelInputLayout.visibility == View.VISIBLE) {
@@ -212,7 +230,6 @@ class FileEditorActivity : AppCompatActivity() {
                     Toast.makeText(this, "Please fill all required fields.", Toast.LENGTH_SHORT).show()
                     return@setOnClickListener
                 }
-                // Hide keyboard
                 val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
                 imm?.hideSoftInputFromWindow(it.windowToken, 0)
 
@@ -229,7 +246,7 @@ class FileEditorActivity : AppCompatActivity() {
                 Toast.makeText(this, "Project not ready or directory not set.", Toast.LENGTH_SHORT).show();
             }
         }
-        modifyFurtherButton.setOnClickListener { finish() }
+        modifyFurtherButton.setOnClickListener { finish() } // Simplified: just finishes to go back
 
         appNameAutocomplete.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -255,10 +272,9 @@ class FileEditorActivity : AppCompatActivity() {
                     customModelInputLayout.visibility = View.VISIBLE
                 } else {
                     customModelInputLayout.visibility = View.GONE
-                    customModelInput.text = null // Clear custom input
+                    customModelInput.text = null
                     if (position < predefinedModels.size) {
                         currentSelectedModelIdInUI = predefinedModels[position].first
-                        // ViewModel's actual model is saved on "Generate"
                     }
                 }
                 updateGenerateButtonTextBasedOnInputs()
@@ -270,7 +286,7 @@ class FileEditorActivity : AppCompatActivity() {
         val currentState = viewModel.workflowState.value
         if (currentState == AiWorkflowState.IDLE || currentState == AiWorkflowState.ERROR || currentState == AiWorkflowState.READY_FOR_ACTION) {
             val isModifying = viewModel.isModifyingProject.value ?: false
-            generateButton.text = if (isModifying) "Modify App with AI" else "Generate App with AI"
+            generateButton.text = if (isModifying) getString(R.string.button_modify_app_with_ai) else getString(R.string.button_generate_app_with_ai)
         }
     }
 
@@ -303,7 +319,7 @@ class FileEditorActivity : AppCompatActivity() {
         }
         viewModel.isLoading.observe(this) { isLoading ->
             loadingIndicator.visibility = if (isLoading) View.VISIBLE else View.GONE
-            generateButton.isEnabled = !isLoading // Simplified enable/disable
+            generateButton.isEnabled = !isLoading
         }
         viewModel.statusText.observe(this) { text ->
             statusText.text = text
@@ -323,14 +339,14 @@ class FileEditorActivity : AppCompatActivity() {
         viewModel.uiErrorEvent.observe(this) { errorMessage ->
             errorMessage?.let {
                 Toast.makeText(this, it, Toast.LENGTH_LONG).show()
-                viewModel.consumedUiErrorEvent() // Consume the event
+                viewModel.consumedUiErrorEvent()
             }
         }
     }
 
     private fun updateUiForState(state: AiWorkflowState) {
-        val isLoading = viewModel.isLoading.value ?: false // Get from LiveData
-        generateButton.isEnabled = !isLoading // This might be redundant if observing isLoading separately
+        val isLoading = viewModel.isLoading.value ?: false
+        generateButton.isEnabled = !isLoading
 
         val editableInputs = state == AiWorkflowState.IDLE || state == AiWorkflowState.ERROR || state == AiWorkflowState.READY_FOR_ACTION
         appNameAutocomplete.isEnabled = editableInputs
@@ -338,14 +354,14 @@ class FileEditorActivity : AppCompatActivity() {
         apiKeyInput.isEnabled = editableInputs
         modelSpinner.isEnabled = editableInputs
         customModelInput.isEnabled = editableInputs && customModelInputLayout.visibility == View.VISIBLE
-        customModelInputLayout.isEnabled = editableInputs // Layout itself doesn't need enable but good practice
+        customModelInputLayout.isEnabled = editableInputs
 
         val buttonTextKey = when (state) {
-            AiWorkflowState.IDLE -> if (viewModel.isModifyingProject.value == true) "Modify App with AI" else "Generate App with AI"
-            AiWorkflowState.ERROR -> if (viewModel.isModifyingProject.value == true) "Retry Modification" else "Retry Generation"
-            AiWorkflowState.READY_FOR_ACTION -> if (viewModel.isModifyingProject.value == true) "Modify Again" else "Generate New App"
-            else -> generateButton.text.toString() // Keep current text during processing states
+            AiWorkflowState.IDLE -> if (viewModel.isModifyingProject.value == true) R.string.button_modify_app_with_ai else R.string.button_generate_app_with_ai
+            AiWorkflowState.ERROR -> if (viewModel.isModifyingProject.value == true) R.string.button_retry_modification else R.string.button_retry_generation
+            AiWorkflowState.READY_FOR_ACTION -> if (viewModel.isModifyingProject.value == true) R.string.button_modify_again else R.string.button_generate_new_app
+            else -> 0 // Will keep current text
         }
-        generateButton.text = buttonTextKey
+        if (buttonTextKey != 0) generateButton.text = getString(buttonTextKey)
     }
 }

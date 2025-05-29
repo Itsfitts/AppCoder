@@ -20,11 +20,13 @@ package com.itsaky.androidide.activities.editor
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.DialogInterface
+import android.content.Intent // Added for starting FileEditorActivity
 import android.os.Bundle
 import android.text.TextUtils
 import android.view.Menu
 import android.view.MenuItem
 import android.view.ViewGroup.LayoutParams
+import android.widget.Toast // Added for fallback messages
 import androidx.annotation.DrawableRes
 import androidx.appcompat.view.menu.MenuBuilder
 import androidx.collection.MutableIntObjectMap
@@ -36,6 +38,7 @@ import com.itsaky.androidide.actions.ActionData
 import com.itsaky.androidide.actions.ActionItem.Location.EDITOR_TOOLBAR
 import com.itsaky.androidide.actions.ActionsRegistry.Companion.getInstance
 import com.itsaky.androidide.actions.FillMenuParams
+import com.itsaky.androidide.dialogs.FileEditorActivity // Added for Intent
 import com.itsaky.androidide.editor.language.treesitter.JavaLanguage
 import com.itsaky.androidide.editor.language.treesitter.JsonLanguage
 import com.itsaky.androidide.editor.language.treesitter.KotlinLanguage
@@ -52,7 +55,7 @@ import com.itsaky.androidide.models.OpenedFile
 import com.itsaky.androidide.models.OpenedFilesCache
 import com.itsaky.androidide.models.Range
 import com.itsaky.androidide.models.SaveResult
-import com.itsaky.androidide.projects.internal.ProjectManagerImpl
+import com.itsaky.androidide.projects.internal.ProjectManagerImpl // Corrected: Using the provided class
 import com.itsaky.androidide.tasks.executeAsync
 import com.itsaky.androidide.ui.CodeEditorView
 import com.itsaky.androidide.utils.DialogUtils
@@ -617,7 +620,7 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
 
     val mapped = unsavedEditors.mapNotNull { it?.file?.absolutePath }
     val builder =
-      DialogUtils.newYesNoDialog( // Corrected to use DialogUtils.newYesNoDialog
+      DialogUtils.newYesNoDialog(
         context = this,
         title = getString(R.string.title_files_unsaved),
         message = getString(R.string.msg_files_unsaved, TextUtils.join("\n", mapped)),
@@ -713,10 +716,6 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
    */
   fun clearCapturedBuildLog() {
     buildLogBuilder.clear()
-    // The UI part (content.bottomSheet.clearBuildOutput())
-    // should be handled by the original appendBuildOutput or
-    // explicitly in EditorBuildEventListener's prepareBuild if necessary.
-    // For now, we assume the UI clearing is handled elsewhere or by prepareBuild in listener.
   }
 
   /**
@@ -739,22 +738,53 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
   /**
    * Called by EditorBuildEventListener when a build fails.
    * This will retrieve the captured build log and show the failure dialog.
+   * The "OK" button will navigate to FileEditorActivity with pre-filled data.
    */
   fun handleBuildFailedAndShowDialog() {
-    val capturedLog = getCompleteCapturedBuildOutput() // Use the new getter
-    val errorMessage = if (capturedLog.isBlank()) {
+    val capturedLog = getCompleteCapturedBuildOutput()
+
+    val projectManager = ProjectManagerImpl.getInstance()
+    val currentProjectFile: File? = try { projectManager.projectDir } catch (e: IllegalStateException) { null }
+    val currentProjectName: String? = currentProjectFile?.name
+    // Assuming projectsBaseDir is the parent of the current project directory.
+    // FileEditorActivity.newIntent expects the base directory for *all* projects.
+    val projectsBaseDirPath: String? = currentProjectFile?.parentFile?.absolutePath
+
+
+    val dialogMessage = if (capturedLog.isBlank()) {
       getString(R.string.build_status_failed) + "\n" + getString(R.string.build_log_empty)
     } else {
-      capturedLog // Show the specifically captured log
+      capturedLog
     }
 
     runOnUiThread {
       DialogUtils.newCustomMessageDialog(
         context = this,
         title = getString(R.string.title_build_failed),
-        message = errorMessage,
-        positiveButtonText = getString(android.R.string.ok),
-        positiveClickListener = { dialog, _ -> dialog.dismiss() },
+        message = dialogMessage,
+        positiveButtonText = getString(R.string.action_retry_build_with_ai),
+        positiveClickListener = { dialog, _ ->
+          dialog.dismiss()
+          if (currentProjectName != null && projectsBaseDirPath != null) {
+            // Both are non-null, safe to use
+            val intent = FileEditorActivity.newIntent(this, projectsBaseDirPath) // Use parent as base
+            intent.putExtra(FileEditorActivity.EXTRA_PREFILL_APP_NAME, currentProjectName)
+            intent.putExtra(FileEditorActivity.EXTRA_PREFILL_APP_DESCRIPTION, capturedLog) // No cast needed, already String
+            startActivity(intent)
+          } else {
+            if (currentProjectName == null) {
+              log.error("Cannot open AI editor: Current project name is null. ProjectFile: $currentProjectFile")
+            }
+            if (projectsBaseDirPath == null) {
+              log.error("Cannot open AI editor: Projects base directory path is null. ProjectFile: $currentProjectFile, Parent: ${currentProjectFile?.parentFile}")
+            }
+            Toast.makeText(
+              this,
+              getString(R.string.msg_cannot_open_ai_editor_project_details_missing),
+              Toast.LENGTH_LONG
+            ).show()
+          }
+        },
         negativeButtonText = getString(android.R.string.cancel),
         negativeClickListener = { dialog, _ -> dialog.dismiss() },
         cancelable = true

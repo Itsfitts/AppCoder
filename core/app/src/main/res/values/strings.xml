@@ -1,44 +1,48 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!--
-  ~  This file is part of AndroidIDE.
-  ~
-  ~  AndroidIDE is free software: you can redistribute it and/or modify
-  ~  it under the terms of the GNU General Public License as published by
-  ~  the Free Software Foundation, either version 3 of the License, or
-  ~  (at your option) any later version.
-  ~
-  ~  AndroidIDE is distributed in the hope that it will be useful,
-  ~  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  ~  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  ~  GNU General Public License for more details.
-  ~
-  ~  You should have received a copy of the GNU General Public License
-  ~   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
-  -->
-
 <resources>
-  <!--  Required by F-Droid-->
-  <string name="app_name" translatable="false">AndroidIDE</string>
+  <!-- ... your other existing strings ... -->
 
-  <!-- New strings for simplified setup -->
-  <string name="msg_simplified_setup" translatable="false">AndroidIDE will automatically install the optimal development environment</string>
-  <string name="msg_simplified_setup_details" translatable="false">The following will be installed automatically: JDK 17, Android SDK 34.0.4, Git and SSH. Just press Continue to begin installation.</string>
-  <!-- Strings needed for listing the items -->
-  <string name="fab_description">Edit file</string>
+  <!-- For the Build Failed Dialog & AI Integration -->
+  <string name="title_build_failed">Build Failed</string>
+  <string name="build_log_empty">Build log is empty or not available.</string>
+  <string name="action_retry_build_with_ai">Retry with AI (Use Error)</string>
+  <string name="msg_cannot_open_ai_editor_project_details_missing">Cannot open AI editor: project name or base directory is missing.</string>
 
-  <!-- Strings needed by MainActivity -->
-  <string name="msg_opened_project_does_not_exist">Opened project does not exist or path is invalid.</string>
-  <string name="title_confirm_open_project">Confirm Open Project</string>
-  <!-- Note: %1$s is a placeholder for the project path -->
-  <string name="msg_confirm_open_project">Do you want to open the project located at \n%1$s?</string>
+  <!-- General strings that were previously mentioned or might be used by DialogUtils/Activities -->
   <string name="yes">Yes</string>
   <string name="no">No</string>
+  <string name="all_saved">All files saved</string> <!-- From EditorHandlerActivity flashSuccess -->
+  <string name="title_files_unsaved">Unsaved Files</string> <!-- From EditorHandlerActivity notifyFilesUnsaved -->
+  <string name="msg_files_unsaved" translatable="false">The following files have unsaved changes:\n\n%1$s\n\nDo you want to save them before closing?</string> <!-- From EditorHandlerActivity notifyFilesUnsaved -->
+  <string name="msg_yesno_def_title" translatable="false">Confirm</string> <!-- Used by DialogUtils.newYesNoDialog -->
+  <string name="msg_yesno_def_message" translatable="false">Are you sure?</string> <!-- Used by DialogUtils.newYesNoDialog -->
+
+
+  <!-- Button text strings for FileEditorActivity (if not already present or for consistency) -->
+  <string name="button_generate_app_with_ai">Generate App with AI</string>
+  <string name="button_modify_app_with_ai">Modify App with AI</string>
+  <string name="button_retry_modification">Retry Modification</string>
+  <string name="button_retry_generation">Retry Generation</string>
+  <string name="button_modify_again">Modify Again</string>
+  <string name="button_generate_new_app">Generate New App</string>
+
+  <!-- String resources from your initial strings.xml for completeness, if relevant -->
+  <string name="app_name" translatable="false">AndroidIDE</string>
+  <string name="msg_simplified_setup" translatable="false">AndroidIDE will automatically install the optimal development environment</string>
+  <string name="msg_simplified_setup_details" translatable="false">The following will be installed automatically: JDK 17, Android SDK 34.0.4, Git and SSH. Just press Continue to begin installation.</string>
+  <string name="fab_description">Edit file</string>
+  <string name="msg_opened_project_does_not_exist">Opened project does not exist or path is invalid.</string>
+  <string name="title_confirm_open_project">Confirm Open Project</string>
+  <string name="msg_confirm_open_project">Do you want to open the project located at \n%1$s?</string>
   <string name="msg_storage_permission_required">Storage permission is required to edit project files.</string>
   <string name="msg_external_storage_unavailable">External storage not available.</string>
   <string name="msg_project_path_not_directory">Project storage path exists but is not a directory.</string>
-
   <string name="action_continue_to_build">Continue to Build</string>
+  <string name="build_status_failed">Build failed!</string> <!-- Example definition, ensure you have one -->
+  <string name="build_status_sucess">Build successful!</string> <!-- Example definition -->
+  <string name="preparing_first">Preparing for the first build. This might take a while...</string> <!-- Example -->
+  <string name="preparing">Preparing...</string> <!-- Example -->
+  <string name="title_run_tasks">Running tasks</string> <!-- Example -->
+  <string name="msg_tooling_server_unavailable">Tooling server is unavailable. Cannot perform build actions.</string> <!-- From ProjectManagerImpl -->
 
-  <string name="title_build_failed">Build Failed</string>
-  <string name="build_log_empty">Build log is empty or not available.</string>
+
 </resources>

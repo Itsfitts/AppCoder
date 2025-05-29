@@ -17,7 +17,7 @@
 package com.itsaky.androidide.utils
 
 import android.content.Context
-import android.content.DialogInterface.OnClickListener
+import android.content.DialogInterface
 import android.view.LayoutInflater
 import android.view.View
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -41,7 +41,7 @@ object DialogUtils {
     title: String,
     message: String? = null,
     cancelable: Boolean = false,
-    onCancelClick: OnClickListener? = null
+    onCancelClick: DialogInterface.OnClickListener? = null
   ): MaterialAlertDialogBuilder {
     val binding = LayoutDialogProgressBinding.inflate(LayoutInflater.from(context))
     val builder = newMaterialDialogBuilder(context)
@@ -79,8 +79,8 @@ object DialogUtils {
   @JvmOverloads
   fun newYesNoDialog(
     context: Context,
-    positiveClickListener: OnClickListener? = null,
-    negativeClickListener: OnClickListener? = null
+    positiveClickListener: DialogInterface.OnClickListener? = null,
+    negativeClickListener: DialogInterface.OnClickListener? = null
   ): MaterialAlertDialogBuilder {
     return newYesNoDialog(
       context,
@@ -109,8 +109,8 @@ object DialogUtils {
     context: Context,
     title: String,
     message: String? = null,
-    positiveClickListener: OnClickListener? = null,
-    negativeClickListener: OnClickListener? = null
+    positiveClickListener: DialogInterface.OnClickListener? = null,
+    negativeClickListener: DialogInterface.OnClickListener? = null
   ): MaterialAlertDialogBuilder {
     val builder = newMaterialDialogBuilder(context)
     builder.setTitle(title)
@@ -163,5 +163,50 @@ object DialogUtils {
       }
       .setNegativeButton(android.R.string.cancel, null)
       .setCancelable(cancelable)
+  }
+
+  /**
+   * Creates a new alert dialog with a custom message and specified button texts.
+   *
+   * @param context The context for the dialog.
+   * @param title The title of the dialog.
+   * @param message The message to display in the dialog.
+   * @param positiveButtonText Text for the positive button.
+   * @param positiveClickListener A listener that will be invoked on the positive button click.
+   * @param negativeButtonText Text for the negative button.
+   * @param negativeClickListener A listener that will be invoked on the negative button click (optional).
+   * @param neutralButtonText Text for the neutral button (optional).
+   * @param neutralClickListener A listener that will be invoked on the neutral button click (optional).
+   * @param cancelable Whether the dialog is cancelable.
+   * @return The newly created dialog builder.
+   */
+  @JvmStatic
+  @JvmOverloads
+  fun newCustomMessageDialog(
+    context: Context,
+    title: String,
+    message: String?,
+    positiveButtonText: String,
+    positiveClickListener: DialogInterface.OnClickListener,
+    negativeButtonText: String? = null,
+    negativeClickListener: DialogInterface.OnClickListener? = null,
+    neutralButtonText: String? = null,
+    neutralClickListener: DialogInterface.OnClickListener? = null,
+    cancelable: Boolean = true // Default to true
+  ): MaterialAlertDialogBuilder {
+    val builder = newMaterialDialogBuilder(context)
+    builder.setTitle(title)
+    builder.setMessage(message)
+    builder.setPositiveButton(positiveButtonText, positiveClickListener)
+
+    negativeButtonText?.let {
+      builder.setNegativeButton(it, negativeClickListener)
+    }
+
+    neutralButtonText?.let {
+      builder.setNeutralButton(it, neutralClickListener)
+    }
+    builder.setCancelable(cancelable)
+    return builder
   }
 }

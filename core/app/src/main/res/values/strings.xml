@@ -1,4 +1,5 @@
-<?xml version="1.0" encoding="utf-8"?><!--
+<?xml version="1.0" encoding="utf-8"?>
+<!--
   ~  This file is part of AndroidIDE.
   ~
   ~  AndroidIDE is free software: you can redistribute it and/or modify
@@ -37,4 +38,7 @@
   <string name="msg_project_path_not_directory">Project storage path exists but is not a directory.</string>
 
   <string name="action_continue_to_build">Continue to Build</string>
+
+  <string name="title_build_failed">Build Failed</string>
+  <string name="build_log_empty">Build log is empty or not available.</string>
 </resources>

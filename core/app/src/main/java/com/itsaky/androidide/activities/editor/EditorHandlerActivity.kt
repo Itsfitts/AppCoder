@@ -19,6 +19,7 @@ package com.itsaky.androidide.activities.editor
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.DialogInterface
 import android.os.Bundle
 import android.text.TextUtils
 import android.view.Menu
@@ -30,7 +31,7 @@ import androidx.collection.MutableIntObjectMap
 import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.GravityCompat
 import com.blankj.utilcode.util.ImageUtils
-import com.itsaky.androidide.R.string
+import com.itsaky.androidide.R
 import com.itsaky.androidide.actions.ActionData
 import com.itsaky.androidide.actions.ActionItem.Location.EDITOR_TOOLBAR
 import com.itsaky.androidide.actions.ActionsRegistry.Companion.getInstance
@@ -54,7 +55,7 @@ import com.itsaky.androidide.models.SaveResult
 import com.itsaky.androidide.projects.internal.ProjectManagerImpl
 import com.itsaky.androidide.tasks.executeAsync
 import com.itsaky.androidide.ui.CodeEditorView
-import com.itsaky.androidide.utils.DialogUtils.newYesNoDialog
+import com.itsaky.androidide.utils.DialogUtils
 import com.itsaky.androidide.utils.IntentUtils.openImage
 import com.itsaky.androidide.utils.UniqueNameBuilder
 import com.itsaky.androidide.utils.flashSuccess
@@ -75,6 +76,7 @@ import kotlin.collections.set
 open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
 
   protected val isOpenedFilesSaved = AtomicBoolean(false)
+  private val buildLogBuilder = StringBuilder() // For storing current build log
 
   override fun doOpenFile(file: File, selection: Range?) {
     openFileAndSelect(file, selection)
@@ -389,7 +391,7 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     if (notify || (result.gradleSaved && requestSync)) {
       withContext(Dispatchers.Main) {
         if (notify) {
-          flashSuccess(string.all_saved)
+          flashSuccess(R.string.all_saved)
         }
 
         if (result.gradleSaved && requestSync) {
@@ -615,10 +617,10 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
 
     val mapped = unsavedEditors.mapNotNull { it?.file?.absolutePath }
     val builder =
-      newYesNoDialog(
+      DialogUtils.newYesNoDialog( // Corrected to use DialogUtils.newYesNoDialog
         context = this,
-        title = getString(string.title_files_unsaved),
-        message = getString(string.msg_files_unsaved, TextUtils.join("\n", mapped)),
+        title = getString(R.string.title_files_unsaved),
+        message = getString(R.string.msg_files_unsaved, TextUtils.join("\n", mapped)),
         positiveClickListener = { dialog, _ ->
           dialog.dismiss()
           saveAllAsync(notify = true, runAfter = { runOnUiThread(invokeAfter) })
@@ -700,6 +702,63 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
           tab.text = name
         }
       }
+    }
+  }
+
+  // --- New/Modified methods for build log handling ---
+
+  /**
+   * Clears the internally stored build log.
+   * This should be called by EditorBuildEventListener when a new build prepares.
+   */
+  fun clearCapturedBuildLog() {
+    buildLogBuilder.clear()
+    // The UI part (content.bottomSheet.clearBuildOutput())
+    // should be handled by the original appendBuildOutput or
+    // explicitly in EditorBuildEventListener's prepareBuild if necessary.
+    // For now, we assume the UI clearing is handled elsewhere or by prepareBuild in listener.
+  }
+
+  /**
+   * Captures a line of build output into the internal StringBuilder.
+   * This method is specifically for EditorHandlerActivity's internal log storage
+   * and is called by EditorBuildEventListener IN ADDITION to the
+   * existing appendBuildOutput of the superclass (or this class if not overridden).
+   */
+  fun captureBuildLogLine(line: String) {
+    buildLogBuilder.append(line).append("\n")
+  }
+
+  /**
+   * Retrieves the complete build output text from the internal StringBuilder.
+   */
+  private fun getCompleteCapturedBuildOutput(): String {
+    return buildLogBuilder.toString()
+  }
+
+  /**
+   * Called by EditorBuildEventListener when a build fails.
+   * This will retrieve the captured build log and show the failure dialog.
+   */
+  fun handleBuildFailedAndShowDialog() {
+    val capturedLog = getCompleteCapturedBuildOutput() // Use the new getter
+    val errorMessage = if (capturedLog.isBlank()) {
+      getString(R.string.build_status_failed) + "\n" + getString(R.string.build_log_empty)
+    } else {
+      capturedLog // Show the specifically captured log
+    }
+
+    runOnUiThread {
+      DialogUtils.newCustomMessageDialog(
+        context = this,
+        title = getString(R.string.title_build_failed),
+        message = errorMessage,
+        positiveButtonText = getString(android.R.string.ok),
+        positiveClickListener = { dialog, _ -> dialog.dismiss() },
+        negativeButtonText = getString(android.R.string.cancel),
+        negativeClickListener = { dialog, _ -> dialog.dismiss() },
+        cancelable = true
+      ).show()
     }
   }
 }

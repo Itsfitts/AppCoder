@@ -54,7 +54,7 @@ In contrast, no-code tools receive less attention, likely due to LLMs’ current
 
 AppCoder, the focus of this project, targets non-programmers, as coding directly on a phone is not ideal. A desktop IDE is generally more powerful and flexible, but a phone-based IDE offers ease of use. Combined with an LLM that handles the coding, this creates a practical system for quickly building apps on mobile devices.
 
-### 💻 Alternative App Creation Tools for Non-Programmers
+### 📱 Alternative App Creation Tools for Non-Programmers
 *  **[Kiki.dev former Appacella](https://www.kiki.dev/)** 
 
 ### 💻 Alternative Full IDEs primarily focused on programmers 

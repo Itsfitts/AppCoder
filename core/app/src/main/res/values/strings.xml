@@ -43,6 +43,6 @@
   <string name="preparing">Preparing...</string> <!-- Example -->
   <string name="title_run_tasks">Running tasks</string> <!-- Example -->
   <string name="msg_tooling_server_unavailable">Tooling server is unavailable. Cannot perform build actions.</string> <!-- From ProjectManagerImpl -->
-
-
+  <string name="msg_project_sync_failed_after_ai">Project sync after AI modification failed: %1$s</string>
+  <string name="ai_fix_failure_prefix">Look through the code of the app to fix the following build failure:\n\n</string>
 </resources>

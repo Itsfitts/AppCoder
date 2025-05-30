@@ -44,6 +44,26 @@ Export the generated code to continue development on a desktop with professional
 
 ---
 
+## ✨ Alternatives / Existing Tools
+
+The space of programming helpers that use LLMs is relatively new and rapidly becoming crowded, as LLMs and programming are a natural match. The performance of LLMs on programming and math tasks is expected to improve significantly, with some predicting that all coding tasks will eventually be handled by LLMs.
+
+The most well-known tools are IDEs with advanced LLM and agent integrations, designed to help both professional and beginner programmers generate better code more efficiently.
+
+In contrast, no-code tools receive less attention, likely due to LLMs’ current limitations in common sense reasoning, which still requires human oversight. Currently, LLMs perform best at low-level tasks but are increasingly capable of implementing entire features. Non-programmers, who can manage higher-level design and testing, are becoming more effective collaborators for guiding these more capable LLMs. As LLMs continue to improve, a growing share of apps will be developed by non-programmers.
+
+AppCoder, the focus of this project, targets non-programmers, as coding directly on a phone is not ideal. A desktop IDE is generally more powerful and flexible, but a phone-based IDE offers ease of use. Combined with an LLM that handles the coding, this creates a practical system for quickly building apps on mobile devices.
+
+# 💻 App Creation Tools for Non-Programmers
+*  **[Kiki.dev former Appacella](https://www.kiki.dev/)** 
+
+# 💻 Full IDEs primarily focused on programmers 
+* Cursor
+* Windsurf (bought by OpenAI)
+* Github Copiliot (free for students)
+
+---
+
 ## 🛠️ For more serious Developers: Building AppCoder from Source
 
 This section is for those who want to compile AppCoder from its source code. **If you just downloaded the APK, you can skip this.**
@@ -59,13 +79,6 @@ This might be interested for you if you want to implement your own LLM API calls
     *   **Gradle build fails in Android Studio:** Try running the build process again.
     *   **Build of the *generated app* (by AppCoder) on the phone fails (during its terminal run):** Uninstall the partially built app and restart the build process within AppCoder.
 6. You find the LLM related Code under AppCoder\core\app\src\main\java\com\itsaky\androidide\dialogs the rest of the app is basically the original AndroidIDE code only modefied in a few areas for example getting it streamlined to better work for LLM based development.
-
----
-## ✨ Alternative Terms / Inspiration
-
-*   App Maker
-*   Vibe Coding
-*   Cursor / Windsurf for Android
 
 ---
 

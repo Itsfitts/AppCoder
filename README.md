@@ -55,7 +55,7 @@ In contrast, no-code tools receive less attention, likely due to LLMs’ current
 AppCoder, the focus of this project, targets non-programmers, as coding directly on a phone is not ideal. A desktop IDE is generally more powerful and flexible, but a phone-based IDE offers ease of use. Combined with an LLM that handles the coding, this creates a practical system for quickly building apps on mobile devices.
 
 ### 📱 Alternative App Creation Tools for Non-Programmers
-*  **[Kiki.dev former Appacella](https://www.kiki.dev/)** 
+*  **[Kiki.dev former Appacella](https://www.kiki.dev/)** is a commercial non-open source app for coding apps. It has 30 free itterations a month and 5 per day. The model however seems less advanced than the gemini 2.5 flash model used in this project. Build time is fast and similar to this project.
 
 ### 💻 Alternative Full IDEs primarily focused on programmers 
 * Cursor

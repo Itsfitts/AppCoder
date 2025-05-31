@@ -35,12 +35,25 @@ Simply describe your app vision, and AppCoder handles the code generation.
 Export the generated code to continue development on a desktop with professional tools.
 
 **What is AppCoder able to do?**
-*   Currently the limiting factor determining how complex the app can get is the LLM running in the background.
-*   The default LLM in this app is Gemini 2.5 Flash with Thinking budget maximised. This Gemini flash model is free and able to do simple apps like a ToDo list app, a tic-tac-toe or even Tetris game. A simple snake game is around the limit what is possible and can take mutliple itteration with the LLM to get a working version running (sometimes I got it working 0 shot sometimes it took me multiple itterations posting the build failiours and describing the errors seen in the installed snake app).
-*   Using Gemini 2.5 Pro should make more complex apps possible but it is not free and would requires you to set up a google billing account. Also it takes Gemini 2.5 Pro around almost 3 minutes to generate the code of a snake app while 2.5 Flash only takes 20 seconds. Testing it on a simple snake game even Gemini 2.5 Pro needed multiple itterations to make it work and resulted in cloud costs of around 0.3 doller for one snake game. It would require more testing to know for sure if it is worth paying for 2.5 Pro instead of simply using 2.5 Flash for android app development. 
-*   A free and fast alternative way to make more complex apps possible is by using Claude Sonnet 4 with artefacts enabled. In the Antropic app you can quickly itterate over your app idea using the artifacts view. By programming in HTML you see the results almost immediately and quicker then itterating in the AppCoder app where one itteration with Gemini 2.5 Flash + build time takes around 60 seconds. If Claude is done making the HTML version of your app you can prompt Claude to translate the HTML code into Android code. Then copy and past the code into the prompt field of AppCoder. Gemini 2.5 Flash running inside AppCoder seems capable enough to create a working android app from this code. The Sonnet 4 model probably creates better code compared to Gemini 2.5 Flash. This way more complex apps become possible for free.
-*   If the app is to complex however the LLM can fail by not generating usefull code at all or introduce to many errors so that the build fails or the installation fails or the installed app crashes on start or the app contains major bugs. In short there are many ways failiours can happen.
-*   After the first build which takes much longer around 10 minutes, follow up builds take around 60 seconds on a modern phone from posting your app description to having the finished app installed on your phone.
+
+
+
+
+* Currently the limiting factor determining how complex the app can get is the LLM running in the background.
+
+* AppCoder uses Gemini 2.5 Flash with the thinking budget maximized as the default. This free model can generate simple apps like to-do lists, tic-tac-toe, or even a Tetris game. On recent benchmarks it performs almost as good as Gemini 2.5 Pro so it is a great choice for this free open source project.
+
+* A snake game is near the complexity limit. It may work on the first try or may require multiple iterations (in each itteration using previous build error messages for correction).
+
+* Gemini 2.5 Pro allows for more complex apps but is not free and requires a Google Cloud billing account. It takes ~3 minutes to generate a snake game using Pro compared to ~20 seconds for Flash. Even with Pro, multiple iterations were often needed, and a single snake app cost around $0.30 in cloud usage when using Pro. 
+
+* Another free and possibly evrn faster alternative for generating complex apps is Claude Sonnet 4 with artifacts enabled. In the Anthropic app, you can iterate on your app idea quickly in HTML. Once done, you can ask Claude to translate the HTML to Android code, then paste that into AppCoder. Gemini 2.5 Flash can usually generate a working Android app from that input.
+
+* However, if the app is too complex, the LLM may generate unusable code, fail to build, crash on install, or contain major bugs.
+
+* The first build takes about 10 minutes. Follow-up builds typically take ~60 seconds on modern phones, from description to installation.
+
+* You can export the generated code and continue development on a desktop using professional tools.
 
 ---
 

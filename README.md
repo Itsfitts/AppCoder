@@ -39,15 +39,15 @@ Export the generated code to continue development on a desktop with professional
 
 
 
-* Currently the limiting factor determining how complex the app can get is the LLM running in the background.
+* Currently, the limiting factor determining how complex the app can be is the LLM running in the background.
 
-* AppCoder uses Gemini 2.5 Flash with the thinking budget maximized as the default. This free model can generate simple apps like to-do lists, tic-tac-toe, or even a Tetris game. On recent benchmarks it performs almost as good as Gemini 2.5 Pro so it is a great choice for this free open source project.
+* AppCoder uses Gemini 2.5 Flash with the thinking budget maximized as the default. This free model can generate simple apps like to-do lists, tic-tac-toe, or even a Tetris game. In recent benchmarks, it performs almost as well as Gemini 2.5 Pro, making it a great choice for this free open-source project.
 
-* A snake game is near the complexity limit. It may work on the first try or may require multiple iterations (in each itteration using previous build error messages for correction).
+* A snake game is near the complexity limit. It may work on the first try or may require multiple iterations, using the previous build's error messages for correction in each iteration.
 
-* Gemini 2.5 Pro allows for more complex apps but is not free and requires a Google Cloud billing account. It takes ~3 minutes to generate a snake game using Pro compared to ~20 seconds for Flash. Even with Pro, multiple iterations were often needed, and a single snake app cost around $0.30 in cloud usage when using Pro. 
+* You also have the option to chYou also have the option to choose Gemini 2.5 Pro in the dropdown menu, but it is not recommended. While it allows for more complex apps, it is not free and requires a Google Cloud billing account. It takes the LLM about 3 minutes to generate the snake game code using Pro, compared to about 20 seconds with Flash. Even with Pro, multiple iterations are often needed, and generating a single snake app costs around $0.30 in cloud usage.
 
-* Another free and possibly evrn faster alternative for generating complex apps is Claude Sonnet 4 with artifacts enabled. In the Anthropic app, you can iterate on your app idea quickly in HTML. Once done, you can ask Claude to translate the HTML to Android code, then paste that into AppCoder. Gemini 2.5 Flash can usually generate a working Android app from that input.
+* Another free and possibly even faAnother free and possibly even faster alternative for generating complex apps is Claude Sonnet 4 with artifacts enabled. In the Anthropic app, you can iterate on your app idea quickly using HTML in the browser first. Once you're done iterating on your app idea, you can ask Claude to translate the HTML into Android code, then paste that code into AppCoder. Gemini 2.5 Flash can usually generate a working Android app from the pasted code in the app description input field.
 
 * However, if the app is too complex, the LLM may generate unusable code, fail to build, crash on install, or contain major bugs.
 

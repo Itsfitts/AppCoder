@@ -44,9 +44,9 @@ Export the generated code to continue development on a desktop with professional
 
 * You also have the option to choose Gemini 2.5 Pro in the dropdown menu. While it allows for more complex apps, it is not free and requires a Google Cloud billing account. It takes the LLM about 3 minutes to generate the snake game code using Pro, compared to about 20 seconds with Flash. Even with Pro, multiple iterations might be needed, and generating a single snake app costs around $0.30 in cloud usage.
 
-* Currently the best results in my testing is using Gemini 2.5 Pro or Claude Sonnet 4 with or without artifacts enabled. In the Anthropic app, you can itterate on your app idea quickly using HTML in the browser first. Once you're done itterating on your app idea, you can ask Claude to translate the HTML into Android code, then paste that code into AppCoder. Gemini 2.5 Flash can usually generate a working Android app from the Claude code copied in the app description input field.
+* In my testing I saw the best performance using Gemini 2.5 Pro, DeepSeek R1 and Claude Sonnet 4 with or without artifacts enabled. In the Anthropic app, you can itterate on your app idea quickly using HTML in the browser first. Once you're done itterating on your app idea, you can ask Claude to translate the HTML into Android code, then paste that code into AppCoder. Gemini 2.5 Flash can usually generate a working Android app from the Claude code copied in the app description input field. For API use DeepSeek R1 would be the cheapest option but AppCoder currently only allows you to switch to Gemini 2.5 Pro if you require better results.
 
-* However, if the app is too complex, the LLM may generate unusable code, fail to build, crash on install, or contain major bugs.
+* However, if the app is too complex, even the most advanced LLMs will generate unusable code, fail to build, crash on install, or contain major bugs.
 
 * The first build takes about 10 minutes. Follow-up builds typically take ~60 seconds on modern phones, from description to installation.
 

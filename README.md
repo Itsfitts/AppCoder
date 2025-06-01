@@ -69,9 +69,7 @@ AppCoder, the focus of this project, targets non-programmers, as coding directly
 *  **[Rork](https://rork.com)** is a commercial non-open source app for coding apps. It has 7 free itterations per day and you will likely need all of them just to build one simple tetris game. The model they use seems less advanced than the gemini 2.5 flash model used in this project. Build time is fast and similar to this project. It uses an additional [Expo Go App](https://play.google.com/store/apps/details?id=host.exp.exponent)** to transfear the build app to your phone.
 
 ### 💻 Alternative Full IDEs primarily focused on programmers 
-* Cursor
-* Windsurf (bought by OpenAI)
-* Github Copiliot (free for students)
+* Cursor, Windsurf (bought by OpenAI), Github Copiliot (free for students), Cline, Trae, Claude Code, Augment, Roocode, The open source AI code editor, Zed AI, Aider, Lovable, bolt, Firebase Studio, Manus  
 
 ---
 

@@ -112,13 +112,22 @@
         </LinearLayout>
     </ScrollView>
 
+    <!-- Automatic Error Fixing CheckBox -->
+    <CheckBox
+        android:id="@+id/auto_fix_checkbox"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Enable Fully Automated Build + Error Fixing (2 attempts)"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="4dp"/>
+
     <!-- Controls and Logs at the bottom -->
     <Button
         android:id="@+id/generate_app_button"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Generate App with AI"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="4dp"
         android:layout_marginBottom="4dp"/>
 
     <ProgressBar
@@ -145,71 +154,71 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="0.4"
-    android:hint="Generation Log"
-    android:layout_marginBottom="8dp">
-    <com.google.android.material.textfield.TextInputEditText
-        android:id="@+id/log_output"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-    android:inputType="textMultiLine"
-    android:gravity="top|start"
-    android:scrollbars="vertical"
-    android:textAppearance="?attr/textAppearanceBody2"
-    android:focusable="true"
-    android:focusableInTouchMode="true"
-    android:clickable="true"
-    android:longClickable="true"
-    android:textIsSelectable="true"
-    android:cursorVisible="true" />
-</com.google.android.material.textfield.TextInputLayout>
-
-    <!-- New AI Conclusion Field -->
-<com.google.android.material.textfield.TextInputLayout
-android:id="@+id/ai_conclusion_layout"
-style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
-android:layout_width="match_parent"
-android:layout_height="0dp"
-android:layout_weight="0.6"
-    android:hint="AI Conclusion"
-    android:layout_marginBottom="8dp">
-<com.google.android.material.textfield.TextInputEditText
-android:id="@+id/ai_conclusion_output"
-android:layout_width="match_parent"
-android:layout_height="match_parent"
-    android:inputType="textMultiLine"
-    android:gravity="top|start"
-    android:scrollbars="vertical"
-    android:textAppearance="?attr/textAppearanceBody2"
-    android:focusable="true"
-    android:focusableInTouchMode="true"
-    android:clickable="true"
-    android:longClickable="true"
-    android:textIsSelectable="true"
-    android:cursorVisible="true" />
+        android:hint="Generation Log"
+        android:layout_marginBottom="8dp">
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/log_output"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:inputType="textMultiLine"
+            android:gravity="top|start"
+            android:scrollbars="vertical"
+            android:textAppearance="?attr/textAppearanceBody2"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:clickable="true"
+            android:longClickable="true"
+            android:textIsSelectable="true"
+            android:cursorVisible="true" />
     </com.google.android.material.textfield.TextInputLayout>
 
-<LinearLayout
-android:id="@+id/action_buttons_layout"
-android:layout_width="match_parent"
-android:layout_height="wrap_content"
-android:orientation="horizontal"
-android:visibility="gone"
-android:layout_marginTop="8dp">
-<Button
-    android:id="@+id/continue_button"
-    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-    android:layout_width="0dp"
-    android:layout_height="wrap_content"
-    android:layout_weight="1"
-    android:text="@string/action_continue_to_build"
-    android:layout_marginEnd="4dp"/>
-<Button
-    android:id="@+id/modify_further_button"
-    style="@style/Widget.MaterialComponents.Button.TextButton"
-    android:layout_width="0dp"
-    android:layout_height="wrap_content"
-    android:layout_weight="1"
-    android:text="Modify Further (Dismiss)"
-    android:layout_marginStart="4dp"/>
-</LinearLayout>
+    <!-- New AI Conclusion Field -->
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/ai_conclusion_layout"
+        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="0.6"
+        android:hint="AI Conclusion"
+        android:layout_marginBottom="8dp">
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/ai_conclusion_output"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:inputType="textMultiLine"
+            android:gravity="top|start"
+            android:scrollbars="vertical"
+            android:textAppearance="?attr/textAppearanceBody2"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:clickable="true"
+            android:longClickable="true"
+            android:textIsSelectable="true"
+            android:cursorVisible="true" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <LinearLayout
+        android:id="@+id/action_buttons_layout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        android:layout_marginTop="8dp">
+        <Button
+            android:id="@+id/continue_button"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/action_continue_to_build"
+            android:layout_marginEnd="4dp"/>
+        <Button
+            android:id="@+id/modify_further_button"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Modify Further (Dismiss)"
+            android:layout_marginStart="4dp"/>
     </LinearLayout>
+</LinearLayout>

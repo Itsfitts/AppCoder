@@ -1,20 +1,3 @@
-/*
- *  This file is part of AndroidIDE.
- *
- *  AndroidIDE is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation, either version 3 of the License, or
- *  (at your option) any later version.
- *
- *  AndroidIDE is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package com.itsaky.androidide.handlers
 
 import com.itsaky.androidide.R // For R.string.build_status_sucess etc.
@@ -26,7 +9,6 @@ import com.itsaky.androidide.tooling.api.messages.result.BuildInfo
 import com.itsaky.androidide.tooling.events.ProgressEvent
 import com.itsaky.androidide.tooling.events.configuration.ProjectConfigurationStartEvent
 import com.itsaky.androidide.tooling.events.task.TaskStartEvent
-// import com.itsaky.androidide.utils.flashError // Replaced by dialog
 import com.itsaky.androidide.utils.flashSuccess
 import org.slf4j.LoggerFactory
 import java.lang.ref.WeakReference
@@ -46,8 +28,9 @@ class EditorBuildEventListener : GradleBuildService.EventListener {
 
   private val _activity: EditorHandlerActivity?
     get() = activityReference.get()
-  private val activity: EditorHandlerActivity
-    get() = checkNotNull(activityReference.get()) { "Activity reference has been destroyed!" }
+  // Removed the non-null asserted 'activity' property to avoid potential NPEs
+  // if accessed after release or if activity is destroyed unexpectedly.
+  // Always use _activity and null-check or checkActivity().
 
   fun setActivity(activity: EditorHandlerActivity) {
     this.activityReference = WeakReference(activity)
@@ -60,94 +43,90 @@ class EditorBuildEventListener : GradleBuildService.EventListener {
   }
 
   override fun prepareBuild(buildInfo: BuildInfo) {
-    checkActivity("prepareBuild") ?: return
+    val currentActivity = checkActivity("prepareBuild") ?: return
 
-    // Clear the activity's captured log for the new build
-    activity.clearCapturedBuildLog()
-    // Also ensure the visual output (bottom sheet) is cleared.
-    // This might be done by activity.appendBuildOutput (from superclass) if it starts fresh,
-    // or you might need activity.content.bottomSheet.clearBuildOutput() here
-    // if clearCapturedBuildLog() doesn't handle the UI view.
-    // For safety, if appendBuildOutput in super doesn't clear, explicitly clear UI:
-    activity.content.bottomSheet.clearBuildOutput()
+    currentActivity.clearCapturedBuildLog()
+    currentActivity.content.bottomSheet.clearBuildOutput()
 
 
     val isFirstBuild = GeneralPreferences.isFirstBuild
-    activity.setStatus(
-      activity.getString(if (isFirstBuild) string.preparing_first else string.preparing)
+    currentActivity.setStatus(
+      currentActivity.getString(if (isFirstBuild) string.preparing_first else string.preparing)
     )
 
     if (isFirstBuild) {
-      activity.showFirstBuildNotice()
+      currentActivity.showFirstBuildNotice()
     }
 
-    activity.editorViewModel.isBuildInProgress = true
+    currentActivity.editorViewModel.isBuildInProgress = true
 
     if (buildInfo.tasks.isNotEmpty()) {
-      val tasksLine = activity.getString(R.string.title_run_tasks) + " : " + buildInfo.tasks.joinToString()
-      // Let the superclass handle displaying this line (e.g., in bottom sheet)
-      activity.appendBuildOutput(tasksLine)
-      // Also capture it for our dialog
-      activity.captureBuildLogLine(tasksLine)
+      val tasksLine = currentActivity.getString(R.string.title_run_tasks) + " : " + buildInfo.tasks.joinToString()
+      currentActivity.appendBuildOutput(tasksLine)
+      currentActivity.captureBuildLogLine(tasksLine)
     }
   }
 
   override fun onBuildSuccessful(tasks: List<String?>) {
-    checkActivity("onBuildSuccessful") ?: return
+    val currentActivity = checkActivity("onBuildSuccessful") ?: return
     analyzeCurrentFile()
     GeneralPreferences.isFirstBuild = false
-    activity.editorViewModel.isBuildInProgress = false
-    activity.flashSuccess(R.string.build_status_sucess)
+    currentActivity.editorViewModel.isBuildInProgress = false
+    currentActivity.flashSuccess(R.string.build_status_sucess)
+
+    // Notify EditorHandlerActivity if auto-fix was active and build succeeded
+    if (currentActivity.isAutoFixModeActivePublic) {
+      currentActivity.handleAutoFixBuildSuccess()
+    }
   }
 
   override fun onProgressEvent(event: ProgressEvent) {
-    checkActivity("onProgressEvent") ?: return
+    val currentActivity = checkActivity("onProgressEvent") ?: return
     if (event is ProjectConfigurationStartEvent || event is TaskStartEvent) {
-      activity.setStatus(event.descriptor.displayName)
+      currentActivity.setStatus(event.descriptor.displayName)
     }
   }
 
   override fun onBuildFailed(tasks: List<String?>) {
-    checkActivity("onBuildFailed") ?: return
+    val currentActivity = checkActivity("onBuildFailed") ?: return
     analyzeCurrentFile()
     GeneralPreferences.isFirstBuild = false
-    activity.editorViewModel.isBuildInProgress = false
-    activity.handleBuildFailedAndShowDialog() // Show dialog with captured log
+    currentActivity.editorViewModel.isBuildInProgress = false
+    // This will correctly trigger the automated retry if applicable, or show manual dialog
+    currentActivity.handleBuildFailedAndShowDialog()
   }
 
   override fun onOutput(line: String?) {
-    checkActivity("onOutput") ?: return
+    val currentActivity = checkActivity("onOutput") ?: return
     line?.let {
-      // Let the superclass method (ProjectHandlerActivity.appendBuildOutput)
-      // handle its standard UI update (e.g., to the bottom sheet).
-      activity.appendBuildOutput(it)
-
-      // Also, capture the line for our internal log in EditorHandlerActivity
-      // which will be used for the dialog on failure.
-      activity.captureBuildLogLine(it)
+      currentActivity.appendBuildOutput(it)
+      currentActivity.captureBuildLogLine(it)
     }
 
     if (line != null && (line.contains("BUILD SUCCESSFUL") || line.contains("BUILD FAILED"))) {
-      activity.setStatus(line)
+      currentActivity.setStatus(line)
     }
   }
 
   private fun analyzeCurrentFile() {
-    checkActivity("analyzeCurrentFile") ?: return
-    val editorView = _activity?.getCurrentEditor()
-    if (editorView != null) {
-      val editor = editorView.editor
-      editor?.analyze()
-    }
+    // Use _activity directly to avoid crash if activity is gone but this is called
+    _activity?.getCurrentEditor()?.editor?.analyze()
   }
 
   private fun checkActivity(action: String): EditorHandlerActivity? {
     if (!enabled) return null
-    return _activity.also {
-      if (it == null) {
+    val current = _activity // Cache the weak reference's get() result
+    if (current == null) {
+      // Only log if it was previously enabled to avoid spamming on release
+      // and if the reference is actually null (meaning activity is gone)
+      if (enabled && activityReference.get() == null) {
         log.warn("[{}] Activity reference has been destroyed!", action)
-        enabled = false
       }
+      // Consider if 'enabled' should be set to false here.
+      // If activity is gone, further events are likely useless.
+      // However, release() is the explicit method for this.
+      // For safety, let's keep it as is unless problems arise.
     }
+    return current
   }
 }

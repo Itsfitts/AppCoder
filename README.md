@@ -35,12 +35,42 @@ Simply describe your app vision, and AppCoder handles the code generation.
 Export the generated code to continue development on a desktop with professional tools.
 
 **What is AppCoder able to do?**
-*   Currently the limiting factor determining how complex the app can get is the LLM running in the background.
-*   The default LLM in this app is Gemini 2.5 Flash with Thinking budget maximised. This Gemini flash model is free and able to do simple apps like a ToDo list app, a tic-tac-toe or even Tetris game. A simple snake game is around the limit what is possible and can take mutliple itteration with the LLM to get a working version running (sometimes I got it working 0 shot sometimes it took me multiple itterations posting the build failiours and describing the errors seen in the installed snake app).
-*   Using Gemini 2.5 Pro should make more complex apps possible but it is not free and would requires you to set up a google billing account. Also it takes Gemini 2.5 Pro around almost 3 minutes to generate the code of a snake app while 2.5 Flash only takes 20 seconds. Testing it on a simple snake game even Gemini 2.5 Pro needed multiple itterations to make it work and resulted in cloud costs of around 0.3 doller for one snake game. It would require more testing to know for sure if it is worth paying for 2.5 Pro instead of simply using 2.5 Flash for android app development. 
-*   A free and fast alternative way to make more complex apps possible is by using Claude Sonnet 4 with artefacts enabled. In the Antropic app you can quickly itterate over your app idea using the artifacts view. By programming in HTML you see the results almost immediately and quicker then itterating in the AppCoder app where one itteration with Gemini 2.5 Flash + build time takes around 60 seconds. If Claude is done making the HTML version of your app you can prompt Claude to translate the HTML code into Android code. Then copy and past the code into the prompt field of AppCoder. Gemini 2.5 Flash running inside AppCoder seems capable enough to create a working android app from this code. The Sonnet 4 model probably creates better code compared to Gemini 2.5 Flash. This way more complex apps become possible for free.
-*   If the app is to complex however the LLM can fail by not generating usefull code at all or introduce to many errors so that the build fails or the installation fails or the installed app crashes on start or the app contains major bugs. In short there are many ways failiours can happen.
-*   After the first build which takes much longer around 10 minutes, follow up builds take around 60 seconds on a modern phone from posting your app description to having the finished app installed on your phone.
+
+* Currently, the limiting factor determining how complex the app can be is the LLM running in the background.
+
+* AppCoder uses Gemini 2.5 Flash with the thinking budget maximized as the default. This free model can generate simple apps like to-do lists, tic-tac-toe, or even a Tetris game. In recent benchmarks, it performs well in benchmarks but my tests show that it often fails to generate working code in the initial app heneration and that it fails to fix errors in the code reliably. Gemini 2.5 Pro, is significantly more reliable. However the Flash model is completly free and a good choice for this free open-source project. 
+
+* A snake game is near the complexity limit. It may work on the first try or may require multiple iterations, using the previous build's error messages for correction in each iteration.
+
+* You also have the option to choose Gemini 2.5 Pro in the dropdown menu. While it allows for more complex apps, it is not free and requires a Google Cloud billing account. It takes the LLM about 3 minutes to generate the snake game code using Pro, compared to about 20 seconds with Flash. Even with Pro, multiple iterations might be needed, and generating a single snake app costs around $0.30 in cloud usage.
+
+* In my testing I saw the best performance using Gemini 2.5 Pro, DeepSeek R1 and Claude Sonnet 4 with or without artifacts enabled. In the Anthropic app, you can itterate on your app idea quickly using HTML in the browser first. Once you're done itterating on your app idea, you can ask Claude to translate the HTML into Android code, then paste that code into AppCoder. Gemini 2.5 Flash can usually generate a working Android app from the Claude code copied in the app description input field. For API use DeepSeek R1 would be the cheapest option but AppCoder currently only allows you to switch to Gemini 2.5 Pro if you require better results.
+
+* However, if the app is too complex, even the most advanced LLMs will generate unusable code, fail to build, crash on install, or contain major bugs.
+
+* The first build takes about 10 minutes. Follow-up builds typically take ~60 seconds on modern phones, from description to installation.
+
+* You can export the generated code and continue development on a desktop using professional tools.
+
+---
+
+## ✨ Alternatives / Existing Tools
+
+The space of programming helpers that use LLMs is relatively new and rapidly becoming crowded, as LLMs and programming are a natural match. The performance of LLMs on programming and math tasks is expected to improve significantly, with some predicting that all coding tasks will eventually be handled by LLMs.
+
+The most well-known tools are IDEs with advanced LLM and agent integrations, designed to help both professional and beginner programmers generate better code more efficiently.
+
+In contrast, no-code tools receive less attention, likely due to LLMs’ current limitations in common sense reasoning, which still requires human oversight. Currently, LLMs perform best at low-level tasks but are increasingly capable of implementing entire features. Non-programmers, who can manage higher-level design and testing, are becoming more effective collaborators for guiding these more capable LLMs. As LLMs continue to improve, a growing share of apps will be developed by non-programmers.
+
+AppCoder, the focus of this project, targets non-programmers, as coding directly on a phone is not ideal. A desktop IDE is generally more powerful and flexible, but a phone-based IDE offers ease of use. Combined with an LLM that handles the coding, this creates a practical system for quickly building apps on mobile devices.
+
+### 📱 Alternative App Creation Tools for Non-Programmers
+*  **[Kiki.dev former Appacella](https://www.kiki.dev/)** is a commercial non-open source app for coding apps. It has 30 free itterations a month and 5 per day. The model seems less advanced than the gemini 2.5 flash model used in this project. Build time is fast and similar to this project. It uses an additional [Expo Go App](https://play.google.com/store/apps/details?id=host.exp.exponent)** to transfear the build app to your phone.
+*  **[Rork](https://rork.com)** is a commercial non-open source app for coding apps. It has 7 free itterations per day and you will likely need all of them just to build one simple tetris game. The model they use seems less advanced than the gemini 2.5 flash model used in this project. Build time is fast and similar to this project. It uses an additional [Expo Go App](https://play.google.com/store/apps/details?id=host.exp.exponent)** to transfear the build app to your phone.
+
+### 💻 Alternative Full IDEs primarily focused on programmers 
+* Cursor, Windsurf (bought by OpenAI), Github Copiliot (free for students), Cline, Trae, Claude Code, Augment, Roocode, The open source AI code editor, Zed AI, Aider, Lovable, bolt, Firebase Studio, Manus
+* YouTuber GosuCoder compared many of them in this [video](https://youtu.be/BAwIbN7Pi2s) showing that performance changes significantly based on which underlying LLM is used.
 
 ---
 
@@ -59,13 +89,6 @@ This might be interested for you if you want to implement your own LLM API calls
     *   **Gradle build fails in Android Studio:** Try running the build process again.
     *   **Build of the *generated app* (by AppCoder) on the phone fails (during its terminal run):** Uninstall the partially built app and restart the build process within AppCoder.
 6. You find the LLM related Code under AppCoder\core\app\src\main\java\com\itsaky\androidide\dialogs the rest of the app is basically the original AndroidIDE code only modefied in a few areas for example getting it streamlined to better work for LLM based development.
-
----
-## ✨ Alternative Terms / Inspiration
-
-*   App Maker
-*   Vibe Coding
-*   Cursor / Windsurf for Android
 
 ---
 

@@ -1,21 +1,5 @@
-/*
- *  This file is part of AndroidIDE.
- *
- *  AndroidIDE is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation, either version 3 of the License, or
- *  (at your option) any later version.
- *
- *  AndroidIDE is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
- */
-
-package com.itsaky.androidide.dialogs
+// AutoFixStateManager.kt
+package com.itsaky.androidide.dialogs // Or your chosen package
 
 import android.util.Log
 
@@ -23,41 +7,61 @@ object AutoFixStateManager {
     private const val DEBUG_TAG = "AutoFixDebug"
 
     var isAutoFixModeGloballyActive: Boolean = false
-        private set // Allow external read, but only internal set via methods
-
+        private set
     var initialAppDescriptionForGlobalAutoFix: String? = null
         private set
-
     var autoFixAttemptsRemainingGlobal: Int = 0
         private set
 
-    const val MAX_GLOBAL_AUTO_FIX_ATTEMPTS = 2 // Define max attempts here
+    const val MAX_GLOBAL_AUTO_FIX_ATTEMPTS = 2
 
     fun enableAutoFixMode(initialDescription: String) {
-        Log.i(DEBUG_TAG, "AutoFixStateManager: Enabling auto-fix globally. Initial Description HAS been set.")
+        if (initialDescription.isBlank()) {
+            Log.w(DEBUG_TAG, "AutoFixStateManager: Attempted to enable with blank description. Not enabling.")
+            // Optionally disable if it was somehow active with a null/blank desc
+            if (isAutoFixModeGloballyActive) disableAutoFixMode()
+            return
+        }
+        // If it's already active with the same description, maybe don't reset attempts?
+        // For now, enabling always resets attempts for a "fresh" auto-fix session.
+        Log.i(DEBUG_TAG, "AutoFixStateManager: Enabling auto-fix globally. Attempts set to $MAX_GLOBAL_AUTO_FIX_ATTEMPTS.")
         isAutoFixModeGloballyActive = true
         initialAppDescriptionForGlobalAutoFix = initialDescription
         autoFixAttemptsRemainingGlobal = MAX_GLOBAL_AUTO_FIX_ATTEMPTS
     }
 
     fun disableAutoFixMode() {
-        Log.i(DEBUG_TAG, "AutoFixStateManager: Disabling auto-fix globally.")
+        if (!isAutoFixModeGloballyActive && initialAppDescriptionForGlobalAutoFix == null && autoFixAttemptsRemainingGlobal == 0) {
+            // Already in a fully disabled state, no need to log again if called redundantly
+            return
+        }
+        Log.i(DEBUG_TAG, "AutoFixStateManager: Disabling auto-fix globally. Resetting attempts and description.")
         isAutoFixModeGloballyActive = false
         initialAppDescriptionForGlobalAutoFix = null
         autoFixAttemptsRemainingGlobal = 0
     }
 
+    /**
+     * Consumes an attempt if auto-fix is active and attempts are left.
+     * @return true if an attempt was successfully consumed, false otherwise.
+     */
     fun consumeAttempt(): Boolean {
         if (isAutoFixModeGloballyActive && autoFixAttemptsRemainingGlobal > 0) {
             autoFixAttemptsRemainingGlobal--
             Log.i(DEBUG_TAG, "AutoFixStateManager: Consumed an auto-fix attempt. Remaining: $autoFixAttemptsRemainingGlobal")
-            return true // Attempt consumed
+            return true
         }
-        Log.w(DEBUG_TAG, "AutoFixStateManager: Could not consume attempt. Active: $isAutoFixModeGloballyActive, Remaining: $autoFixAttemptsRemainingGlobal")
-        return false // No attempt consumed
+        Log.w(DEBUG_TAG, "AutoFixStateManager: Could NOT consume attempt. Active: $isAutoFixModeGloballyActive, Remaining: $autoFixAttemptsRemainingGlobal")
+        return false
     }
 
-    fun hasAttemptsLeft(): Boolean {
-        return isAutoFixModeGloballyActive && autoFixAttemptsRemainingGlobal > 0
+    fun canAttemptAutoFix(): Boolean {
+        val canAttempt = isAutoFixModeGloballyActive &&
+                autoFixAttemptsRemainingGlobal > 0 &&
+                !initialAppDescriptionForGlobalAutoFix.isNullOrBlank()
+        if (!canAttempt) {
+            Log.d(DEBUG_TAG, "AutoFixStateManager: canAttemptAutoFix is FALSE. Active: $isAutoFixModeGloballyActive, Remaining: $autoFixAttemptsRemainingGlobal, DescSet: ${!initialAppDescriptionForGlobalAutoFix.isNullOrBlank()}")
+        }
+        return canAttempt
     }
 }

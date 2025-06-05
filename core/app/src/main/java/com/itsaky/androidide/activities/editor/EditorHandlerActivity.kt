@@ -90,15 +90,13 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
       Log.d(DEBUG_TAG, "EditorHandlerActivity: ActivityResultLauncher - Result received. ResultCode: ${result.resultCode}")
       val data: Intent? = result.data
-
-      // AutoFixStateManager's state should have been set by FileEditorActivity before it finished.
-      // We primarily react to the result and project path.
+      val wasAutoFixActiveBeforeThisResult = AutoFixStateManager.isAutoFixModeGloballyActive // Use global state
+      Log.d(DEBUG_TAG, "EditorHandlerActivity: ActivityResultLauncher - wasAutoFixActiveBeforeThisResult=$wasAutoFixActiveBeforeThisResult (at start of callback)")
 
       if (result.resultCode == Activity.RESULT_OK && data != null) {
         Log.i(DEBUG_TAG, "EditorHandlerActivity: ActivityResultLauncher - RESULT_OK from FileEditorActivity.")
         val projectPathFromResult = data.getStringExtra(FileEditorActivity.RESULT_EXTRA_PROJECT_PATH)
-        // val isResponseFromAutoRetryIntent = data.getBooleanExtra(FileEditorActivity.EXTRA_IS_AUTO_RETRY_ATTEMPT, false)
-        // This flag from intent is less critical now as handleBuildFailed uses global state to know if it's an auto-retry.
+        // val isResponseFromAutoRetryIntent = data.getBooleanExtra(FileEditorActivity.EXTRA_IS_AUTO_RETRY_ATTEMPT, false) // Less critical now
 
         if (projectPathFromResult.isNullOrBlank()) {
           Log.e(DEBUG_TAG, "ActivityResultLauncher - Project path missing. Disabling global auto-fix.")
@@ -108,9 +106,8 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
           return@registerForActivityResult
         }
 
-        // The important state (isAutoFixModeGloballyActive, initialDesc, attempts)
-        // was set within FileEditorActivity by interacting with AutoFixStateManager.
-        // We just need to update our UI based on the current global state.
+        // State was set by FileEditorActivity globally.
+        // We just update our UI based on the (potentially just changed) global state.
         updateAutoFixModeIndicator()
 
         val newProjectDir = File(projectPathFromResult)
@@ -118,24 +115,38 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
         val currentManagerDir = try { projectManager.projectDir } catch (e: IllegalStateException) { null }
         val projectSwitchNeeded = currentManagerDir == null || currentManagerDir.absolutePath != newProjectDir.absolutePath
 
-        if (projectSwitchNeeded) {
-          Log.i(DEBUG_TAG, "ActivityResultLauncher - Project context changed/not set. Switching to: ${newProjectDir.absolutePath}")
-          saveOpenedFiles()
-          doCloseAll {
-            projectManager.openProject(newProjectDir.absolutePath)
-            // onProjectInitialized will check AutoFixStateManager.isAutoFixModeGloballyActive for auto-run logic
-            super.initializeProject()
+        // --- ADD DELAY HERE before project initialization/sync ---
+        lifecycleScope.launch {
+          Log.d(DEBUG_TAG, "ActivityResultLauncher: Starting 1.5 second delay before project sync/init.")
+          delay(1500) // 1.5 seconds delay - adjust as needed
+
+          if (isDestroyed || isFinishing) {
+            Log.w(DEBUG_TAG, "ActivityResultLauncher: Activity destroyed during delay, aborting project sync.")
+            return@launch
           }
-        } else {
-          Log.i(DEBUG_TAG, "ActivityResultLauncher - AI op on current project: ${newProjectDir.absolutePath}")
-          // onProjectInitialized will check AutoFixStateManager.isAutoFixModeGloballyActive
-          saveAllAsync(notify = false, requestSync = true, processResources = true) {
-            super.initializeProject()
+
+          Log.d(DEBUG_TAG, "ActivityResultLauncher: Delay finished. Proceeding with project sync/init.")
+          if (projectSwitchNeeded) {
+            Log.i(DEBUG_TAG, "ActivityResultLauncher (after delay) - Project context changed. Switching project to: ${newProjectDir.absolutePath}")
+            saveOpenedFiles() // Good practice before major ops
+            doCloseAll {
+              projectManager.openProject(newProjectDir.absolutePath)
+              // onProjectInitialized will check AutoFixStateManager for auto-run
+              super.initializeProject()
+            }
+          } else {
+            Log.i(DEBUG_TAG, "ActivityResultLauncher (after delay) - AI op on current project: ${newProjectDir.absolutePath}")
+            saveAllAsync(notify = false, requestSync = true, processResources = true) {
+              // onProjectInitialized will check AutoFixStateManager for auto-run
+              super.initializeProject()
+            }
           }
         }
+        // --- END OF DELAYED BLOCK ---
+
       } else { // RESULT_CANCELED or data is null or other error
         Log.w(DEBUG_TAG, "ActivityResultLauncher - Result NOT OK (resultCode=${result.resultCode}) or data is null. Disabling global auto-fix.")
-        AutoFixStateManager.disableAutoFixMode() // User cancelled or error, stop any ongoing auto-fix cycle
+        AutoFixStateManager.disableAutoFixMode()
         updateAutoFixModeIndicator()
       }
     }

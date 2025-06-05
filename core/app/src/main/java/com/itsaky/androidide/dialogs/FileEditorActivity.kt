@@ -133,8 +133,8 @@ class FileEditorActivity : AppCompatActivity() {
                 finish()
                 return // Critical error, don't proceed with this activity instance
             }
-            autoFixCheckbox.isChecked = true // Reflect that auto-fix is globally active
-            autoFixCheckbox.isEnabled = false // User cannot change it during an auto-retry
+            autoFixCheckbox.isChecked = AutoFixStateManager.isAutoFixModeGloballyActive
+            autoFixCheckbox.isEnabled = true
             thisInstanceIsOperatingInFullAuto = true // This specific run of FileEditorActivity is automated
             Log.d(DEBUG_TAG, "$TAG_ACTIVITY: onCreate (AutoRetry): UI set for auto-fix. Global state: Active=${AutoFixStateManager.isAutoFixModeGloballyActive}, Attempts=${AutoFixStateManager.autoFixAttemptsRemainingGlobal}")
 

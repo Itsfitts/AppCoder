@@ -30,6 +30,7 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.itsaky.androidide.R
 import com.itsaky.androidide.dialogs.AutoFixStateManager // Ensure this matches your package
+import com.itsaky.androidide.dialogs.GeminiHelper.Companion.DEFAULT_GEMINI_MODEL
 import java.io.File
 
 class FileEditorActivity : AppCompatActivity() {

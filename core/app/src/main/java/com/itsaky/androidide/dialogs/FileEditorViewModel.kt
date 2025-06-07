@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import com.itsaky.androidide.dialogs.GeminiHelper.Companion.DEFAULT_GEMINI_MODEL
 
 class FileEditorViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -183,6 +184,33 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
         appendToViewModelLog(message)
     }
 
+
+    private fun buildGenerationPrompt(appName: String, userDescription: String): String {
+        // This template provides a role, critical instructions, and clear structure for the AI.
+        return """
+    **AI GOAL: Full Android App Generation**
+
+    You are an expert Android developer specializing in creating complete, functional, and well-structured applications in Kotlin using modern practices. Your task is to generate all the necessary code for a new Android application based on the user's request.
+
+    **CRITICAL INSTRUCTIONS:**
+    1.  **Full Implementation Required:** You MUST generate all required files for a complete application. This includes XML layouts, all necessary Kotlin classes (Activities, Adapters, etc.), and resource definitions in `strings.xml`.
+    2.  **No Placeholders:** Do NOT use placeholder comments like `// TODO: Implement...` or `// Add logic here`. The generated code must be fully functional.
+    3.  **Resource Definition:** For every string resource used in an XML layout (e.g., `@string/welcome_message`), you MUST provide the corresponding `<string name="welcome_message">...</string>` definition in the `strings.xml` file. This is crucial to prevent resource-not-found build errors.
+    4.  **View Binding:** The project template uses View Binding. You MUST use the generated binding class to access all views (e.g., `binding.myButton.text = ...`). Do not use `findViewById`.
+    5.  **Logical Cohesion:** Ensure the generated code is logical and cohesive. If the user asks for a quiz app, implement the question-handling, answer-checking, and score-updating logic.
+
+    ---
+    
+    **## USER'S APP REQUEST ##**
+
+    **App Name:**
+    $appName
+
+    **App Description:**
+    $userDescription
+    """.trimIndent()
+    }
+
     fun initiateWorkflow(appName: String, appDescription: String, apiKey: String, selectedModelId: String) {
         if (projectsBaseDir == null) {
             handleViewModelError("Projects base directory not set in ViewModel.", null)
@@ -193,6 +221,7 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
         saveApiKey(apiKey)
         saveSelectedModel(selectedModelId)
 
+        // --- Reset all states for a new run ---
         _logOutput.postValue(StringBuilder())
         _logOutputString.postValue("")
         _aiConclusion.postValue(null)
@@ -200,33 +229,48 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
 
         appendToViewModelLog("Workflow initiated for App: $appName, Model: $selectedModelId\n")
 
+        // --- CENTRALIZED PROMPT ENGINEERING ---
+        // This is now the single source of truth for the prompt.
+        // We check if the description is a retry-prompt from a build failure.
+        // If not, we wrap the user's simple description in our powerful template.
+        val isRetryPrompt = appDescription.contains("Please analyze the original app description and the following build failure", ignoreCase = true)
+        val finalPrompt = if (isRetryPrompt) {
+            appendToViewModelLog("This is a retry-on-failure workflow. Using the description as-is.\n")
+            appDescription
+        } else {
+            appendToViewModelLog("This is a new generation/modification workflow. Building enhanced prompt.\n")
+            buildGenerationPrompt(appName, appDescription)
+        }
+        // --- END OF PROMPT ENGINEERING ---
+
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val projectDir = File(projectsBaseDir!!, appName)
                 bridge.currentProjectDirBridge = projectDir
 
-                val actualProjectExistsAndIsDir = projectOperationsHandler.projectExists(appName)
-                var effectiveIsModifying = _isModifyingProject.value ?: false
+                val isExistingProject = projectOperationsHandler.projectExists(appName)
 
-                if (effectiveIsModifying && !actualProjectExistsAndIsDir) {
-                    effectiveIsModifying = false
-                    _isModifyingProject.postValue(false)
-                } else if (!effectiveIsModifying && actualProjectExistsAndIsDir) {
-                    effectiveIsModifying = true
-                    _isModifyingProject.postValue(true)
-                }
-
-                if (effectiveIsModifying) {
-                    appendToViewModelLog("Preparing to modify existing project: $appName\n")
-                    geminiWorkflowCoordinator.startModificationFlow(appName, appDescription, projectDir)
+                if (isExistingProject) {
+                    // --- PATH FOR MODIFYING AN EXISTING PROJECT ---
+                    appendToViewModelLog("Project exists. Starting modification flow...\n")
+                    // Directly call the coordinator with the final prompt.
+                    geminiWorkflowCoordinator.startModificationFlow(appName, finalPrompt, projectDir)
                 } else {
-                    if (projectDir.exists() && !projectDir.isDirectory) {
-                        handleViewModelError("Cannot create project. A file already exists: '$appName'.", null)
-                        return@launch
-                    }
-                    appendToViewModelLog("Starting new project creation: $appName\n")
+                    // --- PATH FOR CREATING A NEW PROJECT ---
+                    appendToViewModelLog("Project does not exist. Creating new project template...\n")
+                    updateViewModelState(AiWorkflowState.CREATING_PROJECT_TEMPLATE)
+
+                    // Create the template, and in the completion callback, start the AI flow.
                     projectOperationsHandler.createNewProjectFromTemplate(appName) { createdDir ->
-                        Log.d(TAG, "ViewModel's onComplete for createNewProjectFromTemplate (background): ${createdDir.path}")
+                        if (createdDir != null) {
+                            appendToViewModelLog("✅ Base project template created at: ${createdDir.absolutePath}\n")
+                            // Now, use the created directory to start the modification flow with our powerful prompt.
+                            geminiWorkflowCoordinator.startModificationFlow(appName, finalPrompt, createdDir)
+                        } else {
+                            // This else block will be hit if createNewProjectFromTemplate itself fails.
+                            // The handler should have already set the error state via the bridge.
+                            Log.e(TAG, "createNewProjectFromTemplate failed and did not return a directory.")
+                        }
                     }
                 }
             } catch (e: Exception) {

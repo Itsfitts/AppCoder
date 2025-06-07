@@ -23,22 +23,44 @@ import com.itsaky.androidide.actions.ActionData
 import com.itsaky.androidide.actions.BaseBuildAction
 import com.itsaky.androidide.fragments.RunTasksDialogFragment
 import com.itsaky.androidide.resources.R
+import java.lang.ref.WeakReference
 
 /** @author Akash Yadav */
 class RunTasksAction(context: Context, override val order: Int) : BaseBuildAction() {
   override val id: String = "ide.editor.build.runTasks"
-  private var dialog: RunTasksDialogFragment? = null
+
+  // Use a WeakReference to avoid memory leaks if the dialog is dismissed by the user.
+  private var dialogRef: WeakReference<RunTasksDialogFragment>? = null
 
   init {
     label = context.getString(R.string.title_run_tasks)
     icon = ContextCompat.getDrawable(context, R.drawable.ic_run_tasks)
   }
 
+  // A helper function to safely dismiss the dialog
+  private fun safeDismiss() {
+    try {
+      val currentDialog = dialogRef?.get()
+      // Only dismiss if the dialog exists, is added to a FragmentManager, and is currently visible.
+      // This check prevents the "not associated with a fragment manager" crash.
+      if (currentDialog != null && currentDialog.isAdded && currentDialog.isVisible) {
+        currentDialog.dismissAllowingStateLoss()
+      }
+    } catch (e: Exception) {
+      // Ignored: Catches any other rare edge cases during dismissal.
+    } finally {
+      dialogRef?.clear()
+      dialogRef = null
+    }
+  }
+
   override suspend fun execAction(data: ActionData): Any {
-    dialog?.dismiss()
-    dialog = null
-    dialog = RunTasksDialogFragment()
-    return dialog!!
+    // Safely dismiss any previous dialog before creating a new one.
+    safeDismiss()
+
+    val newDialog = RunTasksDialogFragment()
+    dialogRef = WeakReference(newDialog)
+    return newDialog
   }
 
   override fun postExec(data: ActionData, result: Any) {
@@ -46,17 +68,15 @@ class RunTasksAction(context: Context, override val order: Int) : BaseBuildActio
       return
     }
 
-    val activity = data.getActivity()!!
-    result.show(activity.supportFragmentManager, this.id)
+    val activity = data.getActivity()
+    if (activity != null && !activity.isFinishing && !activity.isDestroyed) {
+      result.show(activity.supportFragmentManager, this.id)
+    }
   }
-  
+
   override fun destroy() {
     super.destroy()
-    try {
-      dialog?.dismiss()
-    } catch (e: Exception) {
-      // ignored
-    }
-    dialog = null
+    // When the action is destroyed, ensure its dialog is also safely dismissed.
+    safeDismiss()
   }
 }

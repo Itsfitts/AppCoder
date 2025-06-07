@@ -38,8 +38,6 @@ data class FileModifications(
     val conclusion: String?
 )
 
-// --- TOP-LEVEL CONSTANT DEFINED ONCE ---
-const val DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-preview-05-20"
 
 
 class GeminiHelper(
@@ -47,6 +45,12 @@ class GeminiHelper(
     private val errorHandlerCallback: (String, Exception?) -> Unit, // For ViewModel
     private val uiThreadExecutor: (block: () -> Unit) -> Unit      // For ViewModel
 ) {
+
+    // --- TOP-LEVEL CONSTANT DEFINED ONCE ---
+    companion object {
+        const val DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-preview-05-20"
+    }
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(120, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)

@@ -169,51 +169,40 @@ class GeminiWorkflowCoordinator(
             if (fileContentsMap.isNotEmpty()) {
                 fileContentsMap.forEach { (path, content) -> append("FILE: $path\n```\n$content\n```\n\n") }
             } else {
-                append("No existing file content is provided. You will need to generate all necessary files from scratch based on the app description.\n")
+                append("No existing file content is provided. You must generate all necessary files from scratch based on the app description.\n")
             }
         }
         lastFileContextForFallback = filesContentText
 
-        val creationNote = if (missingFilesList.isNotEmpty()) {
-            "The following files were explicitly identified as needing creation or were unreadable; please provide their full content:\n${missingFilesList.joinToString("\n") { "- $it" }}\n\n"
-        } else if (fileContentsMap.isEmpty()) {
-            "Since no specific files were pre-selected or their content provided, determine the essential files and their complete content to realize the app's goal.\n"
-        } else ""
-
         val currentPackageName = ProjectFileUtils.findCommonPackageName(bridge.currentProjectDirBridge, appName, fileContentsMap.values.toList())
-        val packageNameInstruction = "If creating new Kotlin/Java files, use an appropriate package name (e.g., '$currentPackageName' or a sub-package like '$currentPackageName.feature'). Ensure `AndroidManifest.xml` uses '$currentPackageName'."
 
+        // --- START: NEW AND IMPROVED PROMPT TEMPLATE ---
         val prompt = """
-            You are an expert Android App Developer. Your task is to modify or create files for an Android app named "$appName".
-            The primary goal of this app is: "$appDescription"
+    **AI GOAL: Full Android App Implementation**
 
-            $creationNote
-            Current file context (content of files selected for modification, or placeholders/notes for new files):
-            $filesContentText
+    You are an expert Android developer tasked with generating a complete and functional application based on the user's request.
 
-            Instructions:
-            1. Review the app description and the provided file context.
-            2. Determine the necessary file modifications:
-                - For existing files, provide their FULL, UPDATED, and VALID content.
-                - For new files essential to the app's goal, provide their FULL and VALID content including the correct relative path (e.g., "app/src/main/java/$currentPackageName/MyActivity.kt").
-            3. If new dependencies are implied (e.g., new libraries), add them to `app/build.gradle.kts` (or `app/build.gradle`).
-            4. Ensure Kotlin/Java code is idiomatic and XML layouts are well-formed.
-            5. $packageNameInstruction
-            6. If your changes make any existing files obsolete, identify them for deletion.
-            7. **Provide a concise summary of the changes you made. This summary will be shown to the user. It is important to include this.**
+    **## PRIMARY OBJECTIVE ##**
+    App Name: "$appName"
+    User's Goal: "$appDescription"
 
-            Your response MUST be a single JSON object matching the schema provided by the API.
-            The JSON object should have three optional top-level keys:
-            - "filesToWrite": An array of objects, where each object has "filePath" (string) and "fileContent" (string).
-            - "filesToDelete": An array of strings, where each string is a relative file path to delete.
-            - "conclusion": A string containing your summary of changes. THIS IS IMPORTANT.
+    **## PROJECT FILE CONTEXT ##**
+    The following is the content of all relevant files selected for this task. If a file is noted as new or missing, you must generate its complete content. If no files are listed, you must create all necessary files from scratch.
+    
+    $filesContentText
 
-            Example of a file to write entry within "filesToWrite":
-            { "filePath": "app/src/main/java/$currentPackageName/MainActivity.kt", "fileContent": "package $currentPackageName;\n\n// ... rest of the Kotlin code ..." }
+    **## CRITICAL INSTRUCTIONS ##**
+    1.  **GENERATE ALL REQUIRED FILES:** You have the authority and requirement to create NEW files if they are necessary to meet the user's goal (e.g., new Activities, data classes, adapters, XML layouts). Do not limit yourself to only modifying the files listed above if more are needed for a functional app.
+    2.  **COMPLETE IMPLEMENTATION:** Provide the FULL, UPDATED, and VALID content for every file you decide to write. Do not use placeholders like "// TODO" or "// ...".
+    3.  **RESOURCE MANAGEMENT:** If you add a resource call like `@string/score_label` in an XML layout, you MUST define `<string name="score_label">Score</string>` in the `app/src/main/res/values/strings.xml` file. Failure to do so will cause a build error.
+    4.  **VIEW BINDING:** This project uses View Binding. You MUST use the generated binding class to access views (e.g., `binding.myButton.text = ...`). Do not use `findViewById`.
+    5.  **PACKAGE NAME:** Use `$currentPackageName` as the base package name for any new Kotlin/Java files.
+    6.  **PROVIDE A SUMMARY:** You MUST provide a concise summary of the changes you made in the 'conclusion' field of your response. This is shown to the user.
 
-            Ensure all file content is complete and does not use placeholders like "// ... rest of the code ...".
-            Ensure the "conclusion" field is populated with a meaningful summary. If no other changes, a summary like "No code changes were made." is acceptable.
-        """.trimIndent()
+    **## RESPONSE FORMAT ##**
+    Your response MUST be a single, valid JSON object that strictly follows the provided API schema. It must contain the keys "filesToWrite", "filesToDelete", and "conclusion".
+    """.trimIndent()
+        // --- END: NEW AND IMPROVED PROMPT TEMPLATE ---
 
         conversation.addUserMessage(prompt)
         logViaBridge("Sending file context to AI for structured code generation...\n")
@@ -227,7 +216,7 @@ class GeminiWorkflowCoordinator(
                         bridge.handleErrorBridge("AI returned an empty response for structured code generation.", null)
                         return@sendGeminiRequest
                     }
-                    Log.i(TAG, "Raw structured JSON response from AI (Main Generation): \n$responseJsonText") // Internal log
+                    Log.i(TAG, "Raw structured JSON response from AI (Main Generation): \n$responseJsonText")
                     conversation.addModelMessage(responseJsonText)
                     logViaBridge("AI responded with structured data.\n")
 

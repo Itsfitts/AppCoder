@@ -1,6 +1,23 @@
+/*
+ *  This file is part of AndroidIDE.
+ *
+ *  AndroidIDE is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  AndroidIDE is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.itsaky.androidide.handlers
 
-import android.util.Log // Import Log
+import android.util.Log
 import com.itsaky.androidide.R
 import com.itsaky.androidide.activities.editor.EditorHandlerActivity
 import com.itsaky.androidide.preferences.internal.GeneralPreferences
@@ -11,20 +28,16 @@ import com.itsaky.androidide.tooling.events.ProgressEvent
 import com.itsaky.androidide.tooling.events.configuration.ProjectConfigurationStartEvent
 import com.itsaky.androidide.tooling.events.task.TaskStartEvent
 import com.itsaky.androidide.utils.flashSuccess
-import org.slf4j.LoggerFactory // Keep slf4j for existing logs
+import org.slf4j.LoggerFactory
 import java.lang.ref.WeakReference
 
 class EditorBuildEventListener : GradleBuildService.EventListener {
 
-  // Keep existing slf4j logger
   private val slf4jLogger = LoggerFactory.getLogger(EditorBuildEventListener::class.java)
-  // Add Android Log Tag for new debugging
   private val DEBUG_TAG = "AutoFixDebug"
 
   private var enabled = true
   private var activityReference: WeakReference<EditorHandlerActivity> = WeakReference(null)
-
-  // Removed companion object log, using instance logger
 
   private val _activity: EditorHandlerActivity?
     get() = activityReference.get()
@@ -59,7 +72,7 @@ class EditorBuildEventListener : GradleBuildService.EventListener {
 
     currentActivity.editorViewModel.isBuildInProgress = true
     Log.d(DEBUG_TAG, "EditorBuildEventListener: prepareBuild - Calling updateAutoFixModeIndicator")
-    currentActivity.updateAutoFixModeIndicator() // Update indicator at build start
+    currentActivity.updateAutoFixModeIndicator()
 
     if (buildInfo.tasks.isNotEmpty()) {
       val tasksLine = currentActivity.getString(R.string.title_run_tasks) + " : " + buildInfo.tasks.joinToString()
@@ -69,7 +82,7 @@ class EditorBuildEventListener : GradleBuildService.EventListener {
   }
 
   override fun onBuildSuccessful(tasks: List<String?>) {
-    Log.d(DEBUG_TAG, "EditorBuildEventListener: onBuildSuccessful called")
+    Log.d(DEBUG_TAG, "EditorBuildEventListener: onBuildSuccessful called for tasks: ${tasks?.joinToString()}")
     val currentActivity = checkActivity("onBuildSuccessful") ?: return
     analyzeCurrentFile()
     GeneralPreferences.isFirstBuild = false
@@ -78,15 +91,13 @@ class EditorBuildEventListener : GradleBuildService.EventListener {
     Log.d(DEBUG_TAG, "EditorBuildEventListener: onBuildSuccessful - isAutoFixModeActivePublic=${currentActivity.isAutoFixModeActivePublic}")
     if (currentActivity.isAutoFixModeActivePublic) {
       Log.i(DEBUG_TAG, "EditorBuildEventListener: onBuildSuccessful - Auto-fix was active. Calling handleAutoFixBuildSuccess.")
-      currentActivity.handleAutoFixBuildSuccess()
+      currentActivity.handleAutoFixBuildSuccess(tasks)
     } else {
       currentActivity.flashSuccess(R.string.build_status_sucess)
     }
   }
 
   override fun onProgressEvent(event: ProgressEvent) {
-    // This can be very noisy, only log if needed for specific progress debug
-    // Log.v(DEBUG_TAG, "EditorBuildEventListener: onProgressEvent: ${event.descriptor.displayName}")
     val currentActivity = checkActivity("onProgressEvent") ?: return
     if (event is ProjectConfigurationStartEvent || event is TaskStartEvent) {
       currentActivity.setStatus(event.descriptor.displayName)
@@ -94,7 +105,7 @@ class EditorBuildEventListener : GradleBuildService.EventListener {
   }
 
   override fun onBuildFailed(tasks: List<String?>) {
-    Log.e(DEBUG_TAG, "EditorBuildEventListener: onBuildFailed called. Tasks: ${tasks?.joinToString()}")
+    Log.e(DEBUG_TAG, "EditorBuildEventListener: onBuildFailed called for tasks: ${tasks?.joinToString()}")
     val currentActivity = checkActivity("onBuildFailed") ?: run {
       Log.e(DEBUG_TAG, "EditorBuildEventListener: onBuildFailed - Activity is NULL, cannot proceed.")
       return
@@ -103,12 +114,12 @@ class EditorBuildEventListener : GradleBuildService.EventListener {
     GeneralPreferences.isFirstBuild = false
     currentActivity.editorViewModel.isBuildInProgress = false
     Log.i(DEBUG_TAG, "EditorBuildEventListener: onBuildFailed - Calling currentActivity.handleBuildFailed()")
-    currentActivity.handleBuildFailed()
+
+    // Pass the failing tasks to the handler
+    currentActivity.handleBuildFailed(tasks)
   }
 
   override fun onOutput(line: String?) {
-    // This can be very noisy too
-    // Log.v(DEBUG_TAG, "EditorBuildEventListener: onOutput: $line")
     val currentActivity = checkActivity("onOutput") ?: return
     line?.let {
       currentActivity.appendBuildOutput(it)
@@ -131,7 +142,6 @@ class EditorBuildEventListener : GradleBuildService.EventListener {
     }
     val current = _activity
     if (current == null) {
-      // Use slf4jLogger for this specific existing warning to maintain its style
       if (enabled && activityReference.get() == null) {
         slf4jLogger.warn("[{}] Activity reference has been destroyed!", action)
         Log.e(DEBUG_TAG, "EditorBuildEventListener: checkActivity($action) - Activity reference is NULL and listener is enabled (potential issue).")

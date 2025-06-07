@@ -63,6 +63,9 @@ import org.greenrobot.eventbus.ThreadMode
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.min
+import com.itsaky.androidide.projects.android.AndroidModule
+import kotlinx.coroutines.withContext
+
 
 open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
 
@@ -229,14 +232,26 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     }
   }
 
-  fun handleBuildFailed() {
+  // In EditorHandlerActivity.kt, REPLACE the entire handleBuildFailed method with this:
+
+  fun handleBuildFailed(tasks: List<String?>) {
     val capturedLog = getCompleteCapturedBuildOutput()
     val projectManager = ProjectManagerImpl.getInstance()
     val currentProjectFile: File? = try { projectManager.projectDir } catch (e: IllegalStateException) { null }
     val currentProjectName: String? = currentProjectFile?.name
     val projectsBaseDirPath: String? = currentProjectFile?.parentFile?.absolutePath
 
-    Log.d(DEBUG_TAG, "handleBuildFailed: Entered. Checking AutoFixStateManager.canAttemptAutoFix(). Result: ${AutoFixStateManager.canAttemptAutoFix()}")
+    // --- NEW LOGIC ---
+    // Only trigger the auto-fix cycle if the failure was a real build attempt (not just a sync).
+    val wasAssemblyTask = tasks?.any { it?.contains("assemble", ignoreCase = true) == true } ?: false
+    if (!wasAssemblyTask) {
+      Log.w(DEBUG_TAG, "handleBuildFailed: Build failure was not an assembly task (tasks: ${tasks?.joinToString()}). Showing manual dialog without triggering auto-fix cycle.")
+      showManualBuildFailedDialog(capturedLog, currentProjectName, projectsBaseDirPath)
+      return
+    }
+    // --- END OF NEW LOGIC ---
+
+    Log.d(DEBUG_TAG, "handleBuildFailed: Entered for assembly task. Checking AutoFixStateManager.canAttemptAutoFix(). Result: ${AutoFixStateManager.canAttemptAutoFix()}")
 
     if (AutoFixStateManager.canAttemptAutoFix()) {
       Log.d(DEBUG_TAG, "handleBuildFailed: Auto-fix conditions MET via Global State.")
@@ -340,14 +355,95 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     }
   }
 
-  fun handleAutoFixBuildSuccess() {
-    Log.d(DEBUG_TAG, "handleAutoFixBuildSuccess: Entered. Global AutoFix Active=${AutoFixStateManager.isAutoFixModeGloballyActive}")
-    if (AutoFixStateManager.isAutoFixModeGloballyActive) {
-      Log.i(DEBUG_TAG, "handleAutoFixBuildSuccess: Build successful WHILE global auto-fix was active.")
-      Toast.makeText(this, "Build successful (Auto-Fix Mode was Active)", Toast.LENGTH_LONG).show()
-      // Auto-fix mode REMAINS ACTIVE to handle subsequent failures, until attempts run out or user disables it.
-      // The indicator will remain ON.
-      updateAutoFixModeIndicator()
+  private suspend fun findApk(): File? = withContext(Dispatchers.IO) {
+    val projectManager = ProjectManagerImpl.getInstance()
+    val projectDir = try { projectManager.projectDir } catch (e: Exception) { null }
+    if (projectDir == null) {
+      log.error("Cannot find APK, project directory is not available.")
+      return@withContext null
+    }
+
+    val workspace = projectManager.getWorkspace()
+    val appModules = workspace?.getSubProjects()
+      ?.filterIsInstance<AndroidModule>()
+      ?.filter { it.isApplication }
+
+    if (appModules.isNullOrEmpty()) {
+      log.warn("No application modules found. Falling back to generic search in common directories.")
+      val searchBase = File(projectDir, "app/build/outputs/apk")
+      return@withContext searchInDirectory(searchBase)
+    }
+
+    for (module in appModules) {
+      // A common path is module/build/outputs/apk/
+      val searchDir = File(module.projectDir, "build/outputs/apk")
+      val foundApk = searchInDirectory(searchDir)
+      if (foundApk != null) {
+        log.info("Found APK in module '${module.name}' at path: ${foundApk.path}")
+        return@withContext foundApk
+      }
+    }
+
+    log.error("Could not find any APK in any application module's output directory.")
+    return@withContext null
+  }
+
+  private fun searchInDirectory(directory: File): File? {
+    if (!directory.exists() || !directory.isDirectory) return null
+
+    // Prefer debug apks, and get the most recently modified one.
+    val apks = directory.walk()
+      .filter { it.isFile && it.name.endsWith(".apk") }
+      .toList()
+
+    return apks.filter { it.name.contains("debug", ignoreCase = true) }
+      .maxByOrNull { it.lastModified() }
+      ?: apks.maxByOrNull { it.lastModified() }
+  }
+
+  fun handleAutoFixBuildSuccess(tasks: List<String?>) {
+    Log.d(DEBUG_TAG, "handleAutoFixBuildSuccess: Entered for tasks: ${tasks.joinToString()}. Global AutoFix Active=${AutoFixStateManager.isAutoFixModeGloballyActive}")
+    if (!AutoFixStateManager.isAutoFixModeGloballyActive) return
+
+    // Check if the successful build was the FINAL assembly task
+    val wasAssemblyTask = tasks.any { it?.contains("assemble", ignoreCase = true) == true }
+
+    if (wasAssemblyTask) {
+      // --- FINAL SUCCESS ---
+      // This is the true success case. The APK is ready. Find it and install.
+      Log.i(DEBUG_TAG, "Full assembly build successful. Searching for APK to install.")
+      Toast.makeText(this, "Build successful! Installing app...", Toast.LENGTH_LONG).show()
+
+      lifecycleScope.launch {
+        val apkFile = findApk()
+        if (apkFile != null) {
+          Log.i(DEBUG_TAG, "handleAutoFixBuildSuccess: Found APK at ${apkFile.absolutePath}. Triggering installation.")
+          installApk(apkFile)
+          // The full auto cycle is complete. Disable the mode.
+          Log.i(DEBUG_TAG, "handleAutoFixBuildSuccess: Disabling auto-fix mode after successful build and run.")
+          AutoFixStateManager.disableAutoFixMode()
+          updateAutoFixModeIndicator()
+        } else {
+          Log.e(DEBUG_TAG, "handleAutoFixBuildSuccess: Build was successful, but could not find the output APK. Stopping auto-fix.")
+          Toast.makeText(this@EditorHandlerActivity, "Build OK, but couldn't find APK to install.", Toast.LENGTH_LONG).show()
+          AutoFixStateManager.disableAutoFixMode()
+          updateAutoFixModeIndicator()
+        }
+      }
+    } else {
+      // --- PARTIAL SUCCESS ---
+      // This was a successful intermediate step (e.g., resource processing).
+      // The build has stopped and is waiting. We need to re-trigger it to continue.
+      Log.w(DEBUG_TAG, "Partial build successful (tasks: ${tasks.joinToString()}). Re-triggering build process to continue.")
+
+      // Add a small delay to prevent frantic loops and let the UI settle.
+      lifecycleScope.launch {
+        delay(1500) // 1.5-second delay
+        if (isFinishing || isDestroyed) return@launch
+
+        Log.i(DEBUG_TAG, "handleAutoFixBuildSuccess: Programmatically 'pressing' the run button again.")
+        initiateAutoQuickRun()
+      }
     }
   }
 

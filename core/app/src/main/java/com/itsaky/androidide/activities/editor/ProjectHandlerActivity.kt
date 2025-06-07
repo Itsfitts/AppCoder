@@ -33,6 +33,7 @@ import com.blankj.utilcode.util.ThreadUtils
 import com.itsaky.androidide.R
 import com.itsaky.androidide.R.string
 import com.itsaky.androidide.databinding.LayoutSearchProjectBinding
+import com.itsaky.androidide.dialogs.AutoFixStateManager
 import com.itsaky.androidide.flashbar.Flashbar
 import com.itsaky.androidide.fragments.sheets.ProgressSheet
 import com.itsaky.androidide.handlers.EditorBuildEventListener
@@ -49,7 +50,6 @@ import com.itsaky.androidide.projects.builder.BuildService
 import com.itsaky.androidide.projects.internal.ProjectManagerImpl
 import com.itsaky.androidide.services.builder.GradleBuildService
 import com.itsaky.androidide.services.builder.GradleBuildServiceConnnection
-import com.itsaky.androidide.services.builder.gradleDistributionParams
 import com.itsaky.androidide.tasks.executeAsyncProvideError
 import com.itsaky.androidide.tasks.executeWithProgress
 import com.itsaky.androidide.tooling.api.messages.AndroidInitializationParams
@@ -415,14 +415,40 @@ abstract class ProjectHandlerActivity : BaseEditorActivity() {
           log.error("An error occurred initializing the project with Tooling API", error)
         }
 
-        ThreadUtils.runOnUiThread {
-          postProjectInit(false, result?.failure)
+        // --- START NEW LOGIC ---
+        // Check if we are in an active auto-fix cycle.
+        val autoFixActive = AutoFixStateManager.isAutoFixModeGloballyActive
+
+        // If we are in an auto-fix cycle, a failed sync should not stop the process.
+        // We must proceed to the full build to see the real error.
+        if (autoFixActive) {
+          log.warn("Project sync failed during auto-fix cycle. Forcing auto-run to trigger the full build.")
+          runOnUiThread {
+            // We still need to update the UI status for the user
+            setStatus(getString(string.msg_project_initialization_failed))
+            editorViewModel.isInitializing = false
+            // Now, trigger the build that the user would have had to do manually!
+            initiateAutoQuickRun()
+          }
+        } else {
+          // Original behavior for manual operations: stop on failed sync.
+          runOnUiThread {
+            postProjectInit(false, result?.failure)
+          }
         }
+        // --- END NEW LOGIC ---
         return@whenCompleteAsync
       }
 
       onProjectInitialized(result)
     }
+  }
+
+  private fun getGradleDistributionParams(): com.itsaky.androidide.tooling.api.messages.GradleDistributionParams {
+    if (com.itsaky.androidide.preferences.internal.BuildPreferences.gradleInstallationDir.isBlank()) {
+      return com.itsaky.androidide.tooling.api.messages.GradleDistributionParams.WRAPPER
+    }
+    return com.itsaky.androidide.tooling.api.messages.GradleDistributionParams.forInstallationDir(com.itsaky.androidide.preferences.internal.BuildPreferences.gradleInstallationDir)
   }
 
   private fun createProjectInitParams(
@@ -431,7 +457,7 @@ abstract class ProjectHandlerActivity : BaseEditorActivity() {
   ): InitializeProjectParams {
     return InitializeProjectParams(
       projectDir.absolutePath,
-      gradleDistributionParams,
+      getGradleDistributionParams(), // <-- CHANGE TO THIS
       createAndroidParams(buildVariants)
     )
   }
@@ -554,69 +580,69 @@ abstract class ProjectHandlerActivity : BaseEditorActivity() {
     mFindInProjectDialog = null // Create the dialog again if needed
   }
 
-  private fun initiateAutoQuickRun() {
+  protected fun initiateAutoQuickRun() {
     log.info("Initiating automatic Quick Run after project initialization.")
 
     // Simple delay to ensure the UI is ready
     Handler(Looper.getMainLooper()).postDelayed({
-        try {
-            val manager = ProjectManagerImpl.getInstance()
-            val workspace = manager.getWorkspace() ?: run {
-                log.error("Cannot auto quick run: Workspace not available.")
-                return@postDelayed
-            }
-
-            // Find the first application module
-            val module = workspace.getSubProjects().filterIsInstance<AndroidModule>().firstOrNull { it.isApplication } ?: run {
-                log.error("Cannot auto quick run: No application module found.")
-                return@postDelayed
-            }
-
-            // Find and click the Quick Run button by searching all menu items
-            val toolbar = content.editorToolbar
-            var found = false
-            
-            for (i in 0 until toolbar.menu.size()) {
-                val item = toolbar.menu.getItem(i)
-                
-                // Look for menu items that contain "run" in their title or content description
-                if (item.title?.toString()?.contains("run", ignoreCase = true) == true || 
-                    item.contentDescription?.toString()?.contains("run", ignoreCase = true) == true) {
-                    
-                    log.info("Found Quick Run menu item: '${item.title}', trying to click it")
-                    toolbar.menu.performIdentifierAction(item.itemId, 0)
-                    found = true
-                    break
-                }
-            }
-            
-            if (!found) {
-                log.error("Could not find Run button in the toolbar - no matching menu item found")
-            }
-        } catch (e: Exception) {
-            log.error("Error during automatic Quick Run simulation", e)
-            // Add UI feedback if needed, ensuring it runs on the main thread
-            runOnUiThread {
-                flashError("Error trying to auto-run: ${e.message}")
-            }
+      try {
+        val manager = ProjectManagerImpl.getInstance()
+        val workspace = manager.getWorkspace() ?: run {
+          log.error("Cannot auto quick run: Workspace not available.")
+          return@postDelayed
         }
+
+        // Find the first application module
+        val module = workspace.getSubProjects().filterIsInstance<AndroidModule>().firstOrNull { it.isApplication } ?: run {
+          log.error("Cannot auto quick run: No application module found.")
+          return@postDelayed
+        }
+
+        // Find and click the Quick Run button by searching all menu items
+        val toolbar = content.editorToolbar
+        var found = false
+
+        for (i in 0 until toolbar.menu.size()) {
+          val item = toolbar.menu.getItem(i)
+
+          // Look for menu items that contain "run" in their title or content description
+          if (item.title?.toString()?.contains("run", ignoreCase = true) == true ||
+            item.contentDescription?.toString()?.contains("run", ignoreCase = true) == true) {
+
+            log.info("Found Quick Run menu item: '${item.title}', trying to click it")
+            toolbar.menu.performIdentifierAction(item.itemId, 0)
+            found = true
+            break
+          }
+        }
+
+        if (!found) {
+          log.error("Could not find Run button in the toolbar - no matching menu item found")
+        }
+      } catch (e: Exception) {
+        log.error("Error during automatic Quick Run simulation", e)
+        // Add UI feedback if needed, ensuring it runs on the main thread
+        runOnUiThread {
+          flashError("Error trying to auto-run: ${e.message}")
+        }
+      }
     }, 1000) // 1 second delay
   }
 
-  private fun installApk(apk: File) {
-      runOnUiThread {
-          log.debug("Auto Quick Run: Installing APK: {}", apk)
-          if (!apk.exists()) {
-              log.error("Auto Quick Run: APK file does not exist!")
-              return@runOnUiThread
-          }
-          ApkInstaller.installApk(
-              this, // Activity context
-              InstallationResultHandler.createEditorActivitySender(this),
-              apk,
-              installationSessionCallback() // Assuming this method exists in BaseEditorActivity or similar
-          )
+  protected fun installApk(apk: File) {
+    runOnUiThread {
+      log.debug("Auto Quick Run: Installing APK: {}", apk)
+      if (!apk.exists()) {
+        log.error("Auto Quick Run: APK file does not exist!")
+        return@runOnUiThread
       }
+      ApkInstaller.installApk(
+        this, // Activity context
+        InstallationResultHandler.createEditorActivitySender(this),
+        apk,
+        installationSessionCallback() // Assuming this method exists in BaseEditorActivity or similar
+      )
+    }
   }
 
   private fun updateBuildVariants(buildVariants: Map<String, BuildVariantInfo>) {

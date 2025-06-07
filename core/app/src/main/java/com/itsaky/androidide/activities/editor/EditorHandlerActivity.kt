@@ -6,7 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.text.TextUtils
-import android.util.Log // Ensure Log is imported
+import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
@@ -27,8 +27,8 @@ import com.itsaky.androidide.actions.ActionData
 import com.itsaky.androidide.actions.ActionItem.Location
 import com.itsaky.androidide.actions.ActionsRegistry
 import com.itsaky.androidide.actions.FillMenuParams
+import com.itsaky.androidide.dialogs.AutoFixStateManager // Corrected import if needed
 import com.itsaky.androidide.dialogs.FileEditorActivity
-import com.itsaky.androidide.dialogs.AutoFixStateManager // IMPORT THE SINGLETON
 import com.itsaky.androidide.editor.language.treesitter.JavaLanguage
 import com.itsaky.androidide.editor.language.treesitter.JsonLanguage
 import com.itsaky.androidide.editor.language.treesitter.KotlinLanguage
@@ -71,32 +71,21 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
 
   companion object {
     private const val DEBUG_TAG = "AutoFixDebug"
-    private const val AI_FIX_RUN_DELAY_MS = 1200L
+    private const val AI_FIX_RUN_DELAY_MS = 2500L // Increased delay before auto-run
     // MAX_AUTO_FIX_ATTEMPTS is now in AutoFixStateManager
-    // REQUEST_CODE_RETRY_WITH_AI is no longer needed for this specific launcher flow.
   }
 
-  // Local state variables for auto-fix (isAutoFixModeActive, initialAppDescriptionForAutoFix, autoFixAttemptsRemaining)
-  // and the old syncAndRunAfterAiFix flag are REMOVED.
-  // We will now use AutoFixStateManager for auto-fix state.
-  // A local flag might still be needed for the "run after AI sync" if its logic is complex,
-  // but let's simplify first.
-
-  val isAutoFixModeActivePublic: Boolean // Public accessor now reads from the singleton
+  val isAutoFixModeActivePublic: Boolean
     get() = AutoFixStateManager.isAutoFixModeGloballyActive
 
-  // --- ACTIVITY RESULT LAUNCHER for FileEditorActivity ---
   private val aiActivityLauncher: ActivityResultLauncher<Intent> =
     registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
       Log.d(DEBUG_TAG, "EditorHandlerActivity: ActivityResultLauncher - Result received. ResultCode: ${result.resultCode}")
       val data: Intent? = result.data
-      val wasAutoFixActiveBeforeThisResult = AutoFixStateManager.isAutoFixModeGloballyActive // Use global state
-      Log.d(DEBUG_TAG, "EditorHandlerActivity: ActivityResultLauncher - wasAutoFixActiveBeforeThisResult=$wasAutoFixActiveBeforeThisResult (at start of callback)")
 
       if (result.resultCode == Activity.RESULT_OK && data != null) {
         Log.i(DEBUG_TAG, "EditorHandlerActivity: ActivityResultLauncher - RESULT_OK from FileEditorActivity.")
         val projectPathFromResult = data.getStringExtra(FileEditorActivity.RESULT_EXTRA_PROJECT_PATH)
-        // val isResponseFromAutoRetryIntent = data.getBooleanExtra(FileEditorActivity.EXTRA_IS_AUTO_RETRY_ATTEMPT, false) // Less critical now
 
         if (projectPathFromResult.isNullOrBlank()) {
           Log.e(DEBUG_TAG, "ActivityResultLauncher - Project path missing. Disabling global auto-fix.")
@@ -105,20 +94,16 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
           updateAutoFixModeIndicator()
           return@registerForActivityResult
         }
-
-        // State was set by FileEditorActivity globally.
-        // We just update our UI based on the (potentially just changed) global state.
-        updateAutoFixModeIndicator()
+        updateAutoFixModeIndicator() // Update based on state set by FileEditorActivity
 
         val newProjectDir = File(projectPathFromResult)
         val projectManager = ProjectManagerImpl.getInstance()
         val currentManagerDir = try { projectManager.projectDir } catch (e: IllegalStateException) { null }
         val projectSwitchNeeded = currentManagerDir == null || currentManagerDir.absolutePath != newProjectDir.absolutePath
 
-        // --- ADD DELAY HERE before project initialization/sync ---
         lifecycleScope.launch {
           Log.d(DEBUG_TAG, "ActivityResultLauncher: Starting 1.5 second delay before project sync/init.")
-          delay(1500) // 1.5 seconds delay - adjust as needed
+          delay(1500)
 
           if (isDestroyed || isFinishing) {
             Log.w(DEBUG_TAG, "ActivityResultLauncher: Activity destroyed during delay, aborting project sync.")
@@ -128,66 +113,42 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
           Log.d(DEBUG_TAG, "ActivityResultLauncher: Delay finished. Proceeding with project sync/init.")
           if (projectSwitchNeeded) {
             Log.i(DEBUG_TAG, "ActivityResultLauncher (after delay) - Project context changed. Switching project to: ${newProjectDir.absolutePath}")
-            saveOpenedFiles() // Good practice before major ops
+            saveOpenedFiles()
             doCloseAll {
               projectManager.openProject(newProjectDir.absolutePath)
-              // onProjectInitialized will check AutoFixStateManager for auto-run
               super.initializeProject()
             }
           } else {
             Log.i(DEBUG_TAG, "ActivityResultLauncher (after delay) - AI op on current project: ${newProjectDir.absolutePath}")
             saveAllAsync(notify = false, requestSync = true, processResources = true) {
-              // onProjectInitialized will check AutoFixStateManager for auto-run
               super.initializeProject()
             }
           }
         }
-        // --- END OF DELAYED BLOCK ---
-
-      } else { // RESULT_CANCELED or data is null or other error
+      } else {
         Log.w(DEBUG_TAG, "ActivityResultLauncher - Result NOT OK (resultCode=${result.resultCode}) or data is null. Disabling global auto-fix.")
         AutoFixStateManager.disableAutoFixMode()
         updateAutoFixModeIndicator()
       }
     }
-  // --- END OF ACTIVITY RESULT LAUNCHER ---
 
-  override fun doOpenFile(file: File, selection: Range?) {
-    openFileAndSelect(file, selection)
-  }
-
-  override fun doCloseAll(runAfter: () -> Unit) {
-    closeAll(runAfter)
-  }
-
-  override fun provideCurrentEditor(): CodeEditorView? {
-    return getCurrentEditor()
-  }
-
-  override fun provideEditorAt(index: Int): CodeEditorView? {
-    return getEditorAtIndex(index)
-  }
+  override fun doOpenFile(file: File, selection: Range?) { openFileAndSelect(file, selection) }
+  override fun doCloseAll(runAfter: () -> Unit) { closeAll(runAfter) }
+  override fun provideCurrentEditor(): CodeEditorView? { return getCurrentEditor() }
+  override fun provideEditorAt(index: Int): CodeEditorView? { return getEditorAtIndex(index) }
 
   override fun preDestroy() {
     Log.d(DEBUG_TAG, "EditorHandlerActivity: preDestroy called")
     super.preDestroy()
     TSLanguageRegistry.instance.destroy()
     editorViewModel.removeAllFiles()
-    // AutoFixStateManager state persists beyond this activity's lifecycle.
-    // No local auto-fix state to reset here.
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     Log.d(DEBUG_TAG, "EditorHandlerActivity: onCreate START. savedInstanceState isNull: ${savedInstanceState == null}")
     mBuildEventListener.setActivity(this)
-    super.onCreate(savedInstanceState) // Handles its own state restoration (e.g., ProjectHandlerActivity's state)
-
-    // Auto-fix state (isAutoFixModeActive, initialDesc, attempts) is now managed globally by AutoFixStateManager.
-    // No need to restore it from savedInstanceState specifically for those flags.
-    // The `aiActivityLauncher` is initialized as an instance field.
-
+    super.onCreate(savedInstanceState)
     Log.d(DEBUG_TAG, "EditorHandlerActivity: onCreate - Global AutoFix Active on entry: ${AutoFixStateManager.isAutoFixModeGloballyActive}")
-
     editorViewModel._displayedFile.observe(this) { this.content.editorContainer.displayedChild = it }
     editorViewModel._startDrawerOpened.observe(this) { opened ->
       this.binding.editorDrawerLayout.apply {
@@ -217,13 +178,10 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
       TSLanguageRegistry.instance.register(XMLLanguage.TS_TYPE, XMLLanguage.FACTORY)
       IDEColorSchemeProvider.initIfNeeded()
     }
-    updateAutoFixModeIndicator() // Update based on current global state
+    updateAutoFixModeIndicator()
     Log.d(DEBUG_TAG, "EditorHandlerActivity: onCreate END. Global AutoFix Active: ${AutoFixStateManager.isAutoFixModeGloballyActive}")
   }
 
-  // onSaveInstanceState no longer needs to save the auto-fix specific flags,
-  // as they are managed by AutoFixStateManager.
-  // ProjectHandlerActivity's onSaveInstanceState will handle its own relevant state.
   override fun onSaveInstanceState(outState: Bundle) {
     super.onSaveInstanceState(outState)
     Log.i(DEBUG_TAG, "EditorHandlerActivity: onSaveInstanceState called. Global auto-fix state is managed by AutoFixStateManager.")
@@ -232,56 +190,42 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
   override fun onPause() {
     super.onPause()
     Log.d(DEBUG_TAG, "EditorHandlerActivity: onPause. isFinishing=$isFinishing")
-    if (!isOpenedFilesSaved.get()) {
-      saveOpenedFiles()
-    }
+    if (!isOpenedFilesSaved.get()) { saveOpenedFiles() }
   }
 
   override fun onResume() {
     super.onResume()
     Log.d(DEBUG_TAG, "EditorHandlerActivity: onResume. Global AutoFix Active: ${AutoFixStateManager.isAutoFixModeGloballyActive}")
     isOpenedFilesSaved.set(false)
-    updateAutoFixModeIndicator() // Ensure indicator reflects current global state on resume
+    updateAutoFixModeIndicator()
   }
 
   override fun onStart() {
     super.onStart()
     Log.d(DEBUG_TAG, "EditorHandlerActivity: onStart. Global AutoFix Active: ${AutoFixStateManager.isAutoFixModeGloballyActive}")
-    try {
-      editorViewModel.getOrReadOpenedFilesCache(this::onReadOpenedFilesCache)
-    } catch (err: Throwable) {
-      log.error("Failed to reopen recently opened files", err)
-    }
-    updateAutoFixModeIndicator() // Also good to have here
+    try { editorViewModel.getOrReadOpenedFilesCache(this::onReadOpenedFilesCache) }
+    catch (err: Throwable) { log.error("Failed to reopen recently opened files", err) }
+    updateAutoFixModeIndicator()
   }
 
-  // Method to launch FileEditorActivity using the new launcher
   private fun launchAiEditorInteraction(intent: Intent) {
     Log.d(DEBUG_TAG, "EditorHandlerActivity: launchAiEditorInteraction called")
     aiActivityLauncher.launch(intent)
   }
 
-  // The old onActivityResult method is INTENTIONALLY REMOVED as its logic is in aiActivityLauncher.
-
-  private fun resetAutoFixState() { // This method now primarily calls the global disable
-    Log.i(DEBUG_TAG, "EditorHandlerActivity: resetAutoFixState called. Current global state before reset: active=${AutoFixStateManager.isAutoFixModeGloballyActive}, attempts=${AutoFixStateManager.autoFixAttemptsRemainingGlobal}")
-    AutoFixStateManager.disableAutoFixMode() // This logs internally
-    updateAutoFixModeIndicator() // UI update after global state change
+  private fun resetAutoFixState() {
+    Log.i(DEBUG_TAG, "EditorHandlerActivity: resetAutoFixState called. Disabling global auto-fix.")
+    AutoFixStateManager.disableAutoFixMode()
+    updateAutoFixModeIndicator()
   }
 
   fun updateAutoFixModeIndicator() {
-    val isActive = AutoFixStateManager.isAutoFixModeGloballyActive // Read from global state
+    val isActive = AutoFixStateManager.isAutoFixModeGloballyActive
     Log.d(DEBUG_TAG, "EditorHandlerActivity: updateAutoFixModeIndicator called. Global isActive = $isActive")
     try {
-      val bottomSheet = content?.bottomSheet
-      if (bottomSheet == null) {
-        Log.w(DEBUG_TAG, "EditorHandlerActivity: updateAutoFixModeIndicator - content.bottomSheet is NULL.")
-        return
-      }
-      bottomSheet.setAutoFixIndicatorVisibility(isActive)
-      Log.d(DEBUG_TAG, "EditorHandlerActivity: updateAutoFixModeIndicator - Called bottomSheet.setAutoFixIndicatorVisibility($isActive)")
+      content.bottomSheet?.setAutoFixIndicatorVisibility(isActive)
     } catch (e: Exception) {
-      Log.e(DEBUG_TAG, "EditorHandlerActivity: updateAutoFixModeIndicator - FAILED to call setAutoFixIndicatorVisibility. Error: ${e.message}", e)
+      Log.e(DEBUG_TAG, "EditorHandlerActivity: updateAutoFixModeIndicator - FAILED. Error: ${e.message}", e)
     }
   }
 
@@ -297,14 +241,11 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     if (AutoFixStateManager.canAttemptAutoFix()) {
       Log.d(DEBUG_TAG, "handleBuildFailed: Auto-fix conditions MET via Global State.")
       if (currentProjectName != null && projectsBaseDirPath != null) {
-        // Consume attempt returns true if successful
         if (AutoFixStateManager.consumeAttempt()) {
-          val attemptNumberForDisplay = AutoFixStateManager.MAX_GLOBAL_AUTO_FIX_ATTEMPTS - AutoFixStateManager.autoFixAttemptsRemainingGlobal
-          // Note: If MAX_GLOBAL_AUTO_FIX_ATTEMPTS is 2, after 1st consumption, remaining is 1. 2-1 = 1st attempt shown.
-          // After 2nd consumption, remaining is 0. 2-0 = 2nd attempt shown. This seems correct.
-
-          Log.i(DEBUG_TAG, "handleBuildFailed: Triggering AUTOMATED AI fix. Attempt $attemptNumberForDisplay/${AutoFixStateManager.MAX_GLOBAL_AUTO_FIX_ATTEMPTS}. Attempts now remaining: ${AutoFixStateManager.autoFixAttemptsRemainingGlobal}")
-          Toast.makeText(this, "Auto-fixing build error (Attempt $attemptNumberForDisplay/${AutoFixStateManager.MAX_GLOBAL_AUTO_FIX_ATTEMPTS})...", Toast.LENGTH_SHORT).show()
+          val attemptsMade = AutoFixStateManager.MAX_GLOBAL_AUTO_FIX_ATTEMPTS - AutoFixStateManager.autoFixAttemptsRemainingGlobal
+          val toastMessage = "Auto-fixing build error (Attempt $attemptsMade/${AutoFixStateManager.MAX_GLOBAL_AUTO_FIX_ATTEMPTS})..."
+          Log.i(DEBUG_TAG, "handleBuildFailed: Triggering AUTOMATED AI fix. $toastMessage Remaining: ${AutoFixStateManager.autoFixAttemptsRemainingGlobal}")
+          Toast.makeText(this, toastMessage, Toast.LENGTH_SHORT).show()
 
           val combinedDescriptionForAi = """
                         Original App Description:
@@ -318,37 +259,29 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
           val intent = FileEditorActivity.newIntent(this, projectsBaseDirPath).apply {
             putExtra(FileEditorActivity.EXTRA_PREFILL_APP_NAME, currentProjectName)
             putExtra(FileEditorActivity.EXTRA_PREFILL_APP_DESCRIPTION, combinedDescriptionForAi)
-            putExtra(FileEditorActivity.EXTRA_IS_AUTO_RETRY_ATTEMPT, true) // This IS an auto-retry
+            putExtra(FileEditorActivity.EXTRA_IS_AUTO_RETRY_ATTEMPT, true)
           }
-          Log.d(DEBUG_TAG, "handleBuildFailed: Launching FileEditorActivity for auto-retry via launchAiEditorInteraction.")
           launchAiEditorInteraction(intent)
-          return // Auto-fix launched
+          return
         } else {
-          // This case implies canAttemptAutoFix was true, but consumeAttempt immediately failed (e.g., race condition, though unlikely for a singleton)
-          // or if canAttemptAutoFix's logic slightly differs from consumeAttempt's preconditions.
-          Log.w(DEBUG_TAG, "handleBuildFailed: canAttemptAutoFix was true, but consumeAttempt failed. This is unexpected. Showing manual dialog.")
-          AutoFixStateManager.disableAutoFixMode() // Disable to be safe
+          Log.w(DEBUG_TAG, "handleBuildFailed: canAttemptAutoFix was true, but consumeAttempt failed (no attempts left or issue). Showing manual dialog.")
+          AutoFixStateManager.disableAutoFixMode()
           updateAutoFixModeIndicator()
           showManualBuildFailedDialog(capturedLog, currentProjectName, projectsBaseDirPath)
         }
-      } else { // Project details missing
+      } else {
         Log.e(DEBUG_TAG, "handleBuildFailed: Auto-fix: Cannot retry - Project details missing. Disabling global auto-fix.")
         Toast.makeText(this, "Auto-fix: Project details missing. Stopping.", Toast.LENGTH_LONG).show()
         AutoFixStateManager.disableAutoFixMode()
         updateAutoFixModeIndicator()
-        showManualBuildFailedDialog(capturedLog, currentProjectName, projectsBaseDirPath) // Fallback
+        showManualBuildFailedDialog(capturedLog, currentProjectName, projectsBaseDirPath)
       }
-    } else { // Conditions not met (not active, no attempts, or no description)
+    } else {
       Log.d(DEBUG_TAG, "handleBuildFailed: Global Auto-fix conditions NOT MET as per canAttemptAutoFix().")
       if (AutoFixStateManager.isAutoFixModeGloballyActive && AutoFixStateManager.autoFixAttemptsRemainingGlobal <= 0) {
         Log.i(DEBUG_TAG, "handleBuildFailed: Global Auto-fix: Max attempts were reached.")
         Toast.makeText(this, "Auto-fix attempts finished.", Toast.LENGTH_LONG).show()
-      } else if (AutoFixStateManager.isAutoFixModeGloballyActive && AutoFixStateManager.initialAppDescriptionForGlobalAutoFix.isNullOrBlank()) {
-        Log.w(DEBUG_TAG, "handleBuildFailed: Global auto-fix was active but initial description is missing!")
-        Toast.makeText(this, "Auto-fix context (description) missing.", Toast.LENGTH_LONG).show()
       }
-      // Ensure it's off if we are showing the manual dialog for any "not met" reason.
-      // It might already be off if canAttemptAutoFix failed due to it being inactive.
       AutoFixStateManager.disableAutoFixMode()
       updateAutoFixModeIndicator()
       showManualBuildFailedDialog(capturedLog, currentProjectName, projectsBaseDirPath)
@@ -369,12 +302,10 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     }
 
     runOnUiThread {
-      DialogUtils.newCustomMessageDialog(
-        context = this,
-        title = getString(R.string.title_build_failed),
-        message = fullDialogMessage,
-        positiveButtonText = getString(R.string.action_retry_build_with_ai),
-        positiveClickListener = { dialog, _ ->
+      // --- START OF CORRECTION ---
+      val dialogBuilder = DialogUtils.newCustomMessageDialog(this, getString(R.string.title_build_failed), fullDialogMessage,
+        getString(R.string.action_retry_build_with_ai),
+        { dialog, _ ->
           dialog.dismiss()
           Log.d(DEBUG_TAG, "showManualBuildFailedDialog: User clicked 'Retry with AI'. Disabling any active global auto-fix first.")
           AutoFixStateManager.disableAutoFixMode() // User is taking manual control
@@ -393,15 +324,19 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
             Toast.makeText(this, getString(R.string.msg_cannot_open_ai_editor_project_details_missing), Toast.LENGTH_LONG).show()
           }
         },
-        negativeButtonText = getString(android.R.string.cancel),
-        negativeClickListener = { dialog, _ ->
+        getString(android.R.string.cancel),
+        { dialog, _ ->
           Log.d(DEBUG_TAG, "showManualBuildFailedDialog: User clicked 'Cancel'. Disabling global auto-fix.")
           dialog.dismiss()
           AutoFixStateManager.disableAutoFixMode()
           updateAutoFixModeIndicator()
-        },
-        cancelable = true
-      ).show()
+        }
+      ) // The call to newCustomMessageDialog now ends here
+
+      // Now, set the cancelable property on the builder and show it
+      dialogBuilder.setCancelable(true)
+      dialogBuilder.show()
+      // --- END OF CORRECTION ---
     }
   }
 
@@ -409,13 +344,10 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     Log.d(DEBUG_TAG, "handleAutoFixBuildSuccess: Entered. Global AutoFix Active=${AutoFixStateManager.isAutoFixModeGloballyActive}")
     if (AutoFixStateManager.isAutoFixModeGloballyActive) {
       Log.i(DEBUG_TAG, "handleAutoFixBuildSuccess: Build successful WHILE global auto-fix was active.")
-      Toast.makeText(this, "Build successful (Auto-Fix was Active)", Toast.LENGTH_LONG).show()
-      // We now keep AutoFixStateManager active until attempts run out or user manually disables it.
-      // The indicator will remain ON if attempts are left.
-      // If you want to disable on ANY success, call AutoFixStateManager.disableAutoFixMode() here.
-      // For example, to reset after any success:
-      // AutoFixStateManager.disableAutoFixMode()
-      // updateAutoFixModeIndicator()
+      Toast.makeText(this, "Build successful (Auto-Fix Mode was Active)", Toast.LENGTH_LONG).show()
+      // Auto-fix mode REMAINS ACTIVE to handle subsequent failures, until attempts run out or user disables it.
+      // The indicator will remain ON.
+      updateAutoFixModeIndicator()
     }
   }
 
@@ -423,20 +355,21 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     super.onProjectInitialized(result)
     Log.i(DEBUG_TAG, "onProjectInitialized: Result successful: ${result.isSuccessful}. Global AutoFix Active: ${AutoFixStateManager.isAutoFixModeGloballyActive}")
 
-    // Logic to auto-run after a successful AI-triggered build and sync
-    // This 'syncAndRunAfterAiFix' was local, now we check global state
-    // and perhaps if the just-completed FileEditorActivity was an auto-retry.
-    // For simplicity, let's say if AutoFix IS active and project syncs, we try to run.
-    // This implies the AI fix was applied and the project is now in a good state.
-    if (AutoFixStateManager.isAutoFixModeGloballyActive && result.isSuccessful) {
-      Log.i(DEBUG_TAG, "onProjectInitialized: Project sync successful & Auto-fix IS globally active. Scheduling auto-run.")
+    if (AutoFixStateManager.isAutoFixModeGloballyActive) {
+      if (result.isSuccessful) {
+        Log.i(DEBUG_TAG, "onProjectInitialized: Project sync successful & Auto-fix IS globally active. Scheduling auto-run.")
+      } else {
+        Log.w(DEBUG_TAG, "onProjectInitialized: Project sync FAILED (success=${result.isSuccessful}) but Auto-fix IS globally active. STILL Scheduling auto-run to let the build decide.")
+        Toast.makeText(this, "Notice: Project sync had issues after AI fix, attempting build anyway...", Toast.LENGTH_LONG).show()
+      }
       lifecycleScope.launch(Dispatchers.Main) {
+        Log.d(DEBUG_TAG, "onProjectInitialized: Starting ${AI_FIX_RUN_DELAY_MS}ms delay before auto-run.")
         delay(AI_FIX_RUN_DELAY_MS)
         if (isDestroyed || isFinishing) {
-          Log.w(DEBUG_TAG, "onProjectInitialized: Activity destroyed/finishing before auto-run after AI sync.")
+          Log.w(DEBUG_TAG, "onProjectInitialized: Activity destroyed/finishing during auto-run delay.")
           return@launch
         }
-        Log.i(DEBUG_TAG, "onProjectInitialized: Attempting to auto-run project (after AI fix flow).")
+        Log.i(DEBUG_TAG, "onProjectInitialized: Attempting to auto-run project (after AI fix flow / or just because auto-fix is on and sync finished).")
         val toolbar = content.editorToolbar
         var runActionFound = false
         toolbar.menu.forEach { item ->
@@ -446,7 +379,7 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
             item.isEnabled && item.isVisible) {
             Log.i(DEBUG_TAG, "onProjectInitialized: Found 'Run' action: '${item.title}'. Attempting to perform action.")
             if (toolbar.menu.performIdentifierAction(item.itemId, 0)) {
-              Log.i(DEBUG_TAG, "onProjectInitialized: 'Run' action performed successfully.")
+              Log.i(DEBUG_TAG, "onProjectInitialized: 'Run' action performed successfully (this will trigger the actual build).")
               runActionFound = true
             } else {
               Log.w(DEBUG_TAG, "onProjectInitialized: 'Run' action performIdentifierAction returned false for item: ${item.title}")
@@ -455,30 +388,27 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
           }
         }
         if (!runActionFound) {
-          Log.e(DEBUG_TAG, "onProjectInitialized: Could not find or trigger an enabled 'Run' menu item.")
+          Log.e(DEBUG_TAG, "onProjectInitialized: Could not find or trigger 'Run' menu item. Disabling auto-fix as auto-run failed.")
           Toast.makeText(this@EditorHandlerActivity, "Auto-run: Could not find 'Run' action.", Toast.LENGTH_LONG).show()
+          AutoFixStateManager.disableAutoFixMode()
+          updateAutoFixModeIndicator()
         }
       }
-    } else if (!result.isSuccessful && AutoFixStateManager.isAutoFixModeGloballyActive) {
-      Log.e(DEBUG_TAG, "onProjectInitialized: Project Initialization FAILED & auto-fix was active. Disabling global auto-fix.")
-      Toast.makeText(this, "Auto-fix: Project sync failed after AI edit. Stopping.", Toast.LENGTH_LONG).show()
-      AutoFixStateManager.disableAutoFixMode()
-      updateAutoFixModeIndicator()
+    } else if (!result.isSuccessful) { // Auto-fix is NOT globally active AND sync failed
+      Log.w(DEBUG_TAG, "onProjectInitialized: Project sync failed, and global auto-fix was NOT active. No special action.")
     }
   }
 
   override fun postProjectInit(isSuccessful: Boolean, failure: TaskExecutionResult.Failure?) {
     super.postProjectInit(isSuccessful, failure)
-    Log.i(DEBUG_TAG, "postProjectInit: Project sync successful: $isSuccessful. Global AutoFix Active: ${AutoFixStateManager.isAutoFixModeGloballyActive}. Failure: ${failure?.name}")
+    Log.i(DEBUG_TAG, "postProjectInit: Project sync finished. Successful: $isSuccessful. Global AutoFix Active: ${AutoFixStateManager.isAutoFixModeGloballyActive}. Failure: ${failure?.name}")
     if (!isSuccessful && AutoFixStateManager.isAutoFixModeGloballyActive) {
-      Log.w(DEBUG_TAG, "postProjectInit: Project sync FAILED during an auto-fix attempt. Disabling global auto-fix.")
-      Toast.makeText(this, "Auto-fix: Sync failed. Automatic fixing stopped.", Toast.LENGTH_LONG).show()
-      AutoFixStateManager.disableAutoFixMode()
-      updateAutoFixModeIndicator()
+      Log.w(DEBUG_TAG, "postProjectInit: Project sync FAILED (isSuccessful=false) while AutoFixStateManager was active. Global auto-fix REMAINS ACTIVE. Build from auto-run will determine next steps.")
+      // No longer disabling AutoFixStateManager here. Let the build attempt proceed.
     }
   }
 
-  //<editor-fold desc="Standard File and Editor Operations - KEEP THESE AS THEY ARE">
+  //<editor-fold desc="Standard File and Editor Operations - KEEP THESE AS THEY ARE (Copied from your provided code)">
   override fun saveOpenedFiles() {
     writeOpenedFilesCache(getOpenedFiles(), getCurrentEditor()?.editor?.file)
   }

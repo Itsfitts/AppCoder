@@ -1,5 +1,5 @@
 // AutoFixStateManager.kt
-package com.itsaky.androidide.dialogs // Or your chosen package
+package com.itsaky.androidide.dialogs // Assuming this is your package
 
 import android.util.Log
 
@@ -13,17 +13,14 @@ object AutoFixStateManager {
     var autoFixAttemptsRemainingGlobal: Int = 0
         private set
 
-    const val MAX_GLOBAL_AUTO_FIX_ATTEMPTS = 2
+    const val MAX_GLOBAL_AUTO_FIX_ATTEMPTS = 3 // Error fixing loop runs for 3 itterations
 
     fun enableAutoFixMode(initialDescription: String) {
         if (initialDescription.isBlank()) {
             Log.w(DEBUG_TAG, "AutoFixStateManager: Attempted to enable with blank description. Not enabling.")
-            // Optionally disable if it was somehow active with a null/blank desc
             if (isAutoFixModeGloballyActive) disableAutoFixMode()
             return
         }
-        // If it's already active with the same description, maybe don't reset attempts?
-        // For now, enabling always resets attempts for a "fresh" auto-fix session.
         Log.i(DEBUG_TAG, "AutoFixStateManager: Enabling auto-fix globally. Attempts set to $MAX_GLOBAL_AUTO_FIX_ATTEMPTS.")
         isAutoFixModeGloballyActive = true
         initialAppDescriptionForGlobalAutoFix = initialDescription
@@ -32,7 +29,6 @@ object AutoFixStateManager {
 
     fun disableAutoFixMode() {
         if (!isAutoFixModeGloballyActive && initialAppDescriptionForGlobalAutoFix == null && autoFixAttemptsRemainingGlobal == 0) {
-            // Already in a fully disabled state, no need to log again if called redundantly
             return
         }
         Log.i(DEBUG_TAG, "AutoFixStateManager: Disabling auto-fix globally. Resetting attempts and description.")
@@ -41,10 +37,6 @@ object AutoFixStateManager {
         autoFixAttemptsRemainingGlobal = 0
     }
 
-    /**
-     * Consumes an attempt if auto-fix is active and attempts are left.
-     * @return true if an attempt was successfully consumed, false otherwise.
-     */
     fun consumeAttempt(): Boolean {
         if (isAutoFixModeGloballyActive && autoFixAttemptsRemainingGlobal > 0) {
             autoFixAttemptsRemainingGlobal--

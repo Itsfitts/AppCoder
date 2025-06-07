@@ -29,24 +29,24 @@ import androidx.lifecycle.ViewModelProvider
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.itsaky.androidide.R
-import com.itsaky.androidide.dialogs.AutoFixStateManager // IMPORT THE SINGLETON
+import com.itsaky.androidide.dialogs.AutoFixStateManager // Ensure this matches your package
 import java.io.File
 
 class FileEditorActivity : AppCompatActivity() {
 
     companion object {
-        private const val DEBUG_TAG = "AutoFixDebug" // Consistent Logging Tag
-        const val TAG_ACTIVITY = "FileEditorActivity" // Original tag for other logs
+        private const val DEBUG_TAG = "AutoFixDebug"
+        const val TAG_ACTIVITY = "FileEditorActivity"
 
         const val EXTRA_PROJECTS_BASE_DIR = "projects_base_dir"
-        const val RESULT_EXTRA_PROJECT_PATH = "project_path_result" // Still needed by EditorHandlerActivity
-        const val EXTRA_APP_NAME = "app_name_result" // Still useful for EditorHandlerActivity if it needs the name
+        const val RESULT_EXTRA_PROJECT_PATH = "project_path_result"
+        const val EXTRA_APP_NAME = "app_name_result"
 
         const val EXTRA_PREFILL_APP_NAME = "prefill_app_name"
         const val EXTRA_PREFILL_APP_DESCRIPTION = "prefill_app_description"
-        const val EXTRA_IS_AUTO_RETRY_ATTEMPT = "com.itsaky.androidide.IS_AUTO_RETRY_ATTEMPT" // Still needed
+        const val EXTRA_IS_AUTO_RETRY_ATTEMPT = "com.itsaky.androidide.IS_AUTO_RETRY_ATTEMPT"
 
-        // These are less critical to pass via intent now but can be kept for other consumers or debugging
+        // These are less critical now but kept for intent logging/potential other consumers
         const val EXTRA_ENABLE_AUTO_FIX = "com.itsaky.androidide.ENABLE_AUTO_FIX"
         const val EXTRA_INITIAL_APP_DESCRIPTION_FOR_AUTO_FIX = "com.itsaky.androidide.INITIAL_APP_DESCRIPTION_FOR_AUTO_FIX"
 
@@ -129,19 +129,19 @@ class FileEditorActivity : AppCompatActivity() {
                 Log.e(DEBUG_TAG, "$TAG_ACTIVITY: FATAL ERROR - Incoming auto-retry BUT GlobalStateManager is not active or has no description! Disabling auto-fix and finishing.")
                 AutoFixStateManager.disableAutoFixMode()
                 Toast.makeText(this, "Auto-fix critical error. Cycle stopped.", Toast.LENGTH_LONG).show()
-                setResult(Activity.RESULT_CANCELED) // Signal error
+                setResult(Activity.RESULT_CANCELED)
                 finish()
-                return // Critical error, don't proceed with this activity instance
+                return
             }
-            autoFixCheckbox.isChecked = AutoFixStateManager.isAutoFixModeGloballyActive
-            autoFixCheckbox.isEnabled = true
+            autoFixCheckbox.isChecked = true // Reflect that auto-fix is globally active
+            autoFixCheckbox.isEnabled = false // User cannot change it during an auto-retry
             thisInstanceIsOperatingInFullAuto = true // This specific run of FileEditorActivity is automated
             Log.d(DEBUG_TAG, "$TAG_ACTIVITY: onCreate (AutoRetry): UI set for auto-fix. Global state: Active=${AutoFixStateManager.isAutoFixModeGloballyActive}, Attempts=${AutoFixStateManager.autoFixAttemptsRemainingGlobal}")
 
             Handler(Looper.getMainLooper()).postDelayed({
                 if (!isFinishing && !isDestroyed) {
                     val appName = appNameAutocomplete.text.toString().trim()
-                    val descriptionWithFailure = appDescriptionInput.text.toString().trim() // This now contains the error log
+                    val descriptionWithFailure = appDescriptionInput.text.toString().trim()
                     val apiKey = apiKeyInput.text.toString().trim()
                     val modelId = getSelectedModelIdFromUi()
 
@@ -153,7 +153,7 @@ class FileEditorActivity : AppCompatActivity() {
                     } else {
                         Log.e(DEBUG_TAG, "$TAG_ACTIVITY: Auto-retry (onCreate Delay): Cannot trigger AI workflow due to missing critical fields. Aborting auto-retry. Disabling global auto-fix.")
                         Toast.makeText(this@FileEditorActivity, "Auto-retry failed: missing inputs for AI.", Toast.LENGTH_LONG).show()
-                        AutoFixStateManager.disableAutoFixMode() // Critical: stop the cycle if inputs are bad
+                        AutoFixStateManager.disableAutoFixMode()
                         setResult(Activity.RESULT_CANCELED)
                         finish()
                     }
@@ -163,9 +163,8 @@ class FileEditorActivity : AppCompatActivity() {
             }, 750)
         } else { // Not an incoming auto-retry
             Log.i(DEBUG_TAG, "$TAG_ACTIVITY: onCreate: Instance is NOT an incoming auto-retry.")
-            // Sync checkbox with current global state, allow user to change it.
-            autoFixCheckbox.isChecked = AutoFixStateManager.isAutoFixModeGloballyActive
-            autoFixCheckbox.isEnabled = true
+            autoFixCheckbox.isChecked = AutoFixStateManager.isAutoFixModeGloballyActive // Sync checkbox with current global state
+            autoFixCheckbox.isEnabled = true // User can change it
             thisInstanceIsOperatingInFullAuto = false // Default for manual start
             Log.d(DEBUG_TAG, "$TAG_ACTIVITY: onCreate (Manual/Initial): autoFixCheckbox.isChecked set to ${AutoFixStateManager.isAutoFixModeGloballyActive} from global state.")
         }
@@ -179,21 +178,16 @@ class FileEditorActivity : AppCompatActivity() {
                 if (viewModel.isLoading.value == true) {
                     Toast.makeText(this@FileEditorActivity, "Processing... Please wait.", Toast.LENGTH_SHORT).show()
                 } else {
-                    Log.i(DEBUG_TAG, "$TAG_ACTIVITY: Back pressed, setting RESULT_CANCELED. Disabling global auto-fix if it was user-initiated and active.")
-
-                    // Check if this was a user-initiated session where auto-fix was turned on
+                    Log.i(DEBUG_TAG, "$TAG_ACTIVITY: Back pressed, setting RESULT_CANCELED.")
                     val isCurrentlyAnAutoRetry = intent.getBooleanExtra(EXTRA_IS_AUTO_RETRY_ATTEMPT, false)
                     if (!isCurrentlyAnAutoRetry && AutoFixStateManager.isAutoFixModeGloballyActive) {
                         Log.i(DEBUG_TAG, "$TAG_ACTIVITY: Back pressed during user-initiated session with auto-fix active. Disabling global auto-fix.")
                         AutoFixStateManager.disableAutoFixMode()
                     }
-
-                    thisInstanceIsOperatingInFullAuto = false // Stop any local auto-proceed
+                    thisInstanceIsOperatingInFullAuto = false
                     setResult(Activity.RESULT_CANCELED)
-
-                    // To fall back to default behavior or next callback:
                     isEnabled = false // Disable this callback
-                    onBackPressedDispatcher.onBackPressed() // Re-trigger back press to find next handler
+                    onBackPressedDispatcher.onBackPressed() // Re-trigger back press
                 }
             }
         })
@@ -207,8 +201,9 @@ class FileEditorActivity : AppCompatActivity() {
                 Toast.makeText(this@FileEditorActivity, "Processing... Please wait.", Toast.LENGTH_SHORT).show()
                 return true
             }
-            Log.i(DEBUG_TAG, "$TAG_ACTIVITY: Home button, setting RESULT_CANCELED. Disabling global auto-fix if it was user-initiated and active.")
-            if (!intent.getBooleanExtra(EXTRA_IS_AUTO_RETRY_ATTEMPT, false) && AutoFixStateManager.isAutoFixModeGloballyActive) {
+            Log.i(DEBUG_TAG, "$TAG_ACTIVITY: Home button, setting RESULT_CANCELED.")
+            val isCurrentlyAnAutoRetry = intent.getBooleanExtra(EXTRA_IS_AUTO_RETRY_ATTEMPT, false)
+            if (!isCurrentlyAnAutoRetry && AutoFixStateManager.isAutoFixModeGloballyActive) {
                 Log.i(DEBUG_TAG, "$TAG_ACTIVITY: Home pressed during user-initiated session with auto-fix active. Disabling global auto-fix.")
                 AutoFixStateManager.disableAutoFixMode()
             }
@@ -278,7 +273,7 @@ class FileEditorActivity : AppCompatActivity() {
 
         Log.d(DEBUG_TAG, "$TAG_ACTIVITY: performGenerateOrFinalizeAction: isTriggeredForImmediateReturn=$isTriggeredForImmediateReturn, isIncomingAutoRetryIntent=$isThisAnIncomingAutoRetryIntent, thisInstanceIsOperatingInFullAuto=$thisInstanceIsOperatingInFullAuto, autoFixCheckbox.isChecked=${autoFixCheckbox.isChecked}, GlobalAutoFixActive=${AutoFixStateManager.isAutoFixModeGloballyActive}")
 
-        if (!isTriggeredForImmediateReturn) { // Validation for manual "Generate/Modify" click
+        if (!isTriggeredForImmediateReturn) {
             var isValid = true
             if (appName.isBlank()) { (appNameAutocomplete.parent.parent as? TextInputLayout)?.error = "App name required"; isValid = false }
             else { (appNameAutocomplete.parent.parent as? TextInputLayout)?.error = null }
@@ -294,8 +289,6 @@ class FileEditorActivity : AppCompatActivity() {
             if (!isValid) {
                 Log.w(DEBUG_TAG, "$TAG_ACTIVITY: performGenerateOrFinalizeAction: Validation FAILED. Stopping.")
                 Toast.makeText(this, "Please fill all required fields.", Toast.LENGTH_SHORT).show()
-                // If validation fails during a user-initiated action where they might have enabled auto-fix,
-                // it's good practice to disable it to prevent unexpected behavior.
                 if (autoFixCheckbox.isChecked) AutoFixStateManager.disableAutoFixMode()
                 thisInstanceIsOperatingInFullAuto = false
                 return
@@ -308,32 +301,27 @@ class FileEditorActivity : AppCompatActivity() {
         viewModel.saveApiKey(apiKey)
         viewModel.saveSelectedModel(selectedModelId)
 
-        // This logic path is for when the user manually clicks the "Generate App / Modify App" button.
-        // NOT for when an auto-retry is finishing or an auto-proceed is happening.
         if (!isTriggeredForImmediateReturn && !isThisAnIncomingAutoRetryIntent) {
             Log.i(DEBUG_TAG, "$TAG_ACTIVITY: User click on Generate/Modify button. Updating AutoFixStateManager based on checkbox.")
             if (autoFixCheckbox.isChecked) {
                 if (currentDescription.isNotBlank()) {
                     AutoFixStateManager.enableAutoFixMode(currentDescription)
-                    thisInstanceIsOperatingInFullAuto = true // For this activity's own auto-proceed logic
+                    thisInstanceIsOperatingInFullAuto = true
                     Log.i(DEBUG_TAG, "$TAG_ACTIVITY: Auto-fix CHECKED by user and description valid. Global auto-fix ENABLED via AutoFixStateManager. thisInstanceIsOperatingInFullAuto=true.")
                 } else {
-                    Log.w(DEBUG_TAG, "$TAG_ACTIVITY: Auto-fix checkbox checked by user, but description is BLANK. Global auto-fix will NOT be enabled by state manager.")
+                    Log.w(DEBUG_TAG, "$TAG_ACTIVITY: Auto-fix checkbox checked by user, but description is BLANK. Global auto-fix will NOT be enabled.")
                     Toast.makeText(this, "App description needed to enable auto-fix.", Toast.LENGTH_LONG).show()
-                    AutoFixStateManager.disableAutoFixMode() // Ensure it's off
+                    AutoFixStateManager.disableAutoFixMode()
                     thisInstanceIsOperatingInFullAuto = false
-                    return // Don't proceed if auto-fix was desired but desc missing
+                    return
                 }
-            } else { // Checkbox not checked by user
+            } else {
                 AutoFixStateManager.disableAutoFixMode()
                 thisInstanceIsOperatingInFullAuto = false
                 Log.i(DEBUG_TAG, "$TAG_ACTIVITY: Auto-fix NOT CHECKED by user. Global auto-fix DISABLED via AutoFixStateManager. thisInstanceIsOperatingInFullAuto=false.")
             }
-            // Initiate the ViewModel workflow.
-            // It will proceed if global auto-fix was successfully enabled OR if auto-fix wasn't checked (normal operation).
             viewModel.initiateWorkflow(appName, currentDescription, apiKey, selectedModelId)
-
-        } else { // This path is for auto-proceeding after ViewModel work OR if this instance is an auto-retry finishing up.
+        } else {
             Log.i(DEBUG_TAG, "$TAG_ACTIVITY: Finalizing and returning RESULT_OK (isTriggeredForImmediateReturn=$isTriggeredForImmediateReturn, isIncomingAutoRetry=$isThisAnIncomingAutoRetryIntent)")
             val resultIntent = Intent()
             resultIntent.putExtra(EXTRA_APP_NAME, appName)
@@ -349,8 +337,6 @@ class FileEditorActivity : AppCompatActivity() {
                     finish()
                     return
                 }
-                // If not an auto-retry but path is null, this is still an issue.
-                // Depending on flow, might need to set RESULT_CANCELED here too.
             }
 
             if (isThisAnIncomingAutoRetryIntent) {
@@ -358,7 +344,6 @@ class FileEditorActivity : AppCompatActivity() {
                 Log.d(DEBUG_TAG, "$TAG_ACTIVITY: Added EXTRA_IS_AUTO_RETRY_ATTEMPT=true to resultIntent because this instance was an auto-retry.")
             }
 
-            // Optional: Send back the current global state for debugging/confirmation by EditorHandlerActivity, though it will read it directly.
             resultIntent.putExtra(EXTRA_ENABLE_AUTO_FIX, AutoFixStateManager.isAutoFixModeGloballyActive)
             if (AutoFixStateManager.isAutoFixModeGloballyActive && AutoFixStateManager.initialAppDescriptionForGlobalAutoFix != null) {
                 resultIntent.putExtra(EXTRA_INITIAL_APP_DESCRIPTION_FOR_AUTO_FIX, AutoFixStateManager.initialAppDescriptionForGlobalAutoFix)
@@ -378,8 +363,6 @@ class FileEditorActivity : AppCompatActivity() {
         }
 
         autoFixCheckbox.setOnCheckedChangeListener { _, isChecked ->
-            // This listener is for when the user MANUALLY toggles the checkbox
-            // (it will be disabled during an incoming auto-retry).
             if (autoFixCheckbox.isEnabled) {
                 val currentDesc = appDescriptionInput.text.toString().trim()
                 if (isChecked) {
@@ -388,11 +371,11 @@ class FileEditorActivity : AppCompatActivity() {
                         Log.i(DEBUG_TAG, "$TAG_ACTIVITY: autoFixCheckbox CHECKED by user (listener). Global auto-fix ENABLED.")
                     } else {
                         Toast.makeText(this, "Please enter an app description to enable auto-fix.", Toast.LENGTH_SHORT).show()
-                        autoFixCheckbox.isChecked = false // Revert checkbox if desc is missing
+                        autoFixCheckbox.isChecked = false
                         Log.w(DEBUG_TAG, "$TAG_ACTIVITY: autoFixCheckbox CHECKED by user (listener), but desc missing. Global auto-fix NOT enabled.")
-                        AutoFixStateManager.disableAutoFixMode() // Ensure it's off
+                        AutoFixStateManager.disableAutoFixMode()
                     }
-                } else { // User unchecked it
+                } else {
                     AutoFixStateManager.disableAutoFixMode()
                     Log.i(DEBUG_TAG, "$TAG_ACTIVITY: autoFixCheckbox UNCHECKED by user (listener). Global auto-fix DISABLED.")
                 }
@@ -405,20 +388,19 @@ class FileEditorActivity : AppCompatActivity() {
                 Log.i(DEBUG_TAG, "$TAG_ACTIVITY: User manually clicked Continue, disabling global auto-fix mode.")
                 AutoFixStateManager.disableAutoFixMode()
             }
-            thisInstanceIsOperatingInFullAuto = false // Stop any local auto-proceed
+            thisInstanceIsOperatingInFullAuto = false
 
             if (viewModel.isLoading.value == false && viewModel.actionButtonsVisible.value == true && viewModel.currentProjectDirVM.value != null) {
                 val resultIntent = Intent().apply {
                     putExtra(EXTRA_APP_NAME, appNameAutocomplete.text.toString().trim())
                     putExtra(RESULT_EXTRA_PROJECT_PATH, viewModel.currentProjectDirVM.value!!.absolutePath)
-                    // No need to explicitly pass auto-fix enabling flags here; user intervention means it's off for this path.
                 }
                 Log.i(DEBUG_TAG, "$TAG_ACTIVITY: Continue button: Setting RESULT_OK and finishing.")
                 logIntentExtrasDetailed(DEBUG_TAG, resultIntent)
                 setResult(Activity.RESULT_OK, resultIntent)
                 finish()
             } else {
-                Log.w(DEBUG_TAG, "$TAG_ACTIVITY: Continue button: Not ready or project path missing. isLoading=${viewModel.isLoading.value}, actionButtonsVisible=${viewModel.actionButtonsVisible.value}, projectDirIsNull=${viewModel.currentProjectDirVM.value == null}")
+                Log.w(DEBUG_TAG, "$TAG_ACTIVITY: Continue button: Not ready or project path missing.")
                 Toast.makeText(this, "Not ready to continue or project path missing.", Toast.LENGTH_SHORT).show()
             }
         }
@@ -430,7 +412,7 @@ class FileEditorActivity : AppCompatActivity() {
                 AutoFixStateManager.disableAutoFixMode()
             }
             thisInstanceIsOperatingInFullAuto = false
-            setResult(Activity.RESULT_CANCELED) // Dismiss means cancel
+            setResult(Activity.RESULT_CANCELED)
             finish()
         }
 
@@ -482,10 +464,10 @@ class FileEditorActivity : AppCompatActivity() {
                 AiWorkflowState.IDLE, AiWorkflowState.ERROR -> {
                     generateButton.text = if (isModifying) getString(R.string.button_modify_app_with_ai) else getString(R.string.button_generate_app_with_ai)
                 }
-                AiWorkflowState.READY_FOR_ACTION -> { // This state implies actionButtons should be visible, but as a fallback
+                AiWorkflowState.READY_FOR_ACTION -> {
                     generateButton.text = if (isModifying) getString(R.string.button_apply_modifications_and_build) else getString(R.string.button_build_generated_app)
                 }
-                else -> generateButton.text = "Processing..." // Default for other loading states
+                else -> generateButton.text = "Processing..."
             }
         }
     }
@@ -506,7 +488,6 @@ class FileEditorActivity : AppCompatActivity() {
             Log.d(DEBUG_TAG, "$TAG_ACTIVITY: VM State OBSERVED: $state. thisInstanceIsOperatingInFullAuto: $thisInstanceIsOperatingInFullAuto, GlobalAutoFixActive: ${AutoFixStateManager.isAutoFixModeGloballyActive}, autoProceedPending: $autoProceedAfterVmWorkIsPending")
             updateUiBasedOnState(state)
 
-            // Auto-proceed if this instance was set to full auto AND global state is active AND VM is ready
             if (thisInstanceIsOperatingInFullAuto &&
                 AutoFixStateManager.isAutoFixModeGloballyActive &&
                 state == AiWorkflowState.READY_FOR_ACTION &&
@@ -551,7 +532,6 @@ class FileEditorActivity : AppCompatActivity() {
                 generateButton.text = "Processing..."
             } else {
                 updateGenerateButtonTextAndRole()
-                // Re-check auto-proceed conditions if loading just finished
                 if (thisInstanceIsOperatingInFullAuto &&
                     AutoFixStateManager.isAutoFixModeGloballyActive &&
                     isReadyForActionFromVm &&

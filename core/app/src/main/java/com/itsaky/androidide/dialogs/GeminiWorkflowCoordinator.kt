@@ -20,6 +20,7 @@ class GeminiWorkflowCoordinator(
 ) {
     companion object {
         private const val TAG = "GeminiWorkflow"
+        private const val PROTECTED_VERSION_FILE = ".version_source"
     }
 
     private val conversation = GeminiConversation()
@@ -293,15 +294,26 @@ class GeminiWorkflowCoordinator(
             return
         }
 
-        if (modifications.filesToWrite.isNotEmpty() || modifications.filesToDelete.isNotEmpty()) {
+        // *** FIX STARTS HERE ***
+        // Filter the deletion list to protect our version tracking file.
+        val filteredFilesToDelete = modifications.filesToDelete.filterNot { filePath ->
+            File(filePath).name == PROTECTED_VERSION_FILE
+        }
+
+        if (modifications.filesToDelete.size != filteredFilesToDelete.size) {
+            logViaBridge("Note: Protected system file '$PROTECTED_VERSION_FILE' was excluded from deletion.\n")
+        }
+        // *** FIX ENDS HERE ***
+
+        if (modifications.filesToWrite.isNotEmpty() || filteredFilesToDelete.isNotEmpty()) {
             logViaBridge("Gemini Workflow Step: Applying code changes and deletions...\n")
             ProjectFileUtils.processFileChangesAndDeletions(
                 projectDir,
                 modifications.filesToWrite,
-                modifications.filesToDelete,
-                directLogAppender // For detailed file ops logging not meant for UI log
+                filteredFilesToDelete, // Pass the filtered list
+                directLogAppender
             ) { writeSuccessCount, writeErrorCount, deleteSuccessCount, deleteErrorCount ->
-                bridge.runOnUiThreadBridge { // Ensure bridge calls are on main thread if they update UI
+                bridge.runOnUiThreadBridge {
                     var operationSummary = ""
                     if (writeErrorCount > 0 || deleteErrorCount > 0) {
                         operationSummary += "⚠️ Some file operations failed. Writes (Success: $writeSuccessCount, Error: $writeErrorCount), Deletes (Success: $deleteSuccessCount, Error: $deleteErrorCount).\n"
@@ -354,9 +366,7 @@ class GeminiWorkflowCoordinator(
             bridge.updateStateBridge(AiWorkflowState.READY_FOR_ACTION)
             return
         }
-        // If we reach here and originalConclusion is NOT blank, it means applyCodeChangesAndOrGetSummary
-        // decided a summary was needed despite an existing one. This path should ideally not be hit
-        // if applyCodeChangesAndOrGetSummary has the correct logic, but as a safe-guard:
+
         if (!originalConclusion.isNullOrBlank()) {
             bridge.displayAiConclusionBridge(originalConclusion) // Use the existing one
             bridge.updateStateBridge(AiWorkflowState.READY_FOR_ACTION)
@@ -403,7 +413,6 @@ class GeminiWorkflowCoordinator(
                     val summaryResponseJsonText = geminiHelper.extractTextFromGeminiResponse(response)
                     Log.i(TAG, "Raw summary generation response from AI: $summaryResponseJsonText")
                     if (summaryResponseJsonText.isBlank()) {
-                        // bridge.handleErrorBridge("AI returned an empty response for summary generation.", null) // Already logged by helper if empty
                         logViaBridge("⚠️ AI returned an empty response for summary generation, using default.")
                         finalSummaryToDisplay = originalConclusion ?: "Summary generation attempt failed (empty response)."
                     } else {

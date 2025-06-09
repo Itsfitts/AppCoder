@@ -491,6 +491,9 @@ class FileEditorActivity : AppCompatActivity() {
     private fun observeViewModel() {
         viewModel.versionsUiVisible.observe(this) { isVisible ->
             appVersionLayout.visibility = if (isVisible) View.VISIBLE else View.GONE
+            // FIX: Re-evaluate the spinner's enabled state whenever its visibility changes.
+            val isLoading = viewModel.isLoading.value ?: false
+            appVersionSpinner.isEnabled = !isLoading && isVisible
         }
 
         viewModel.projectVersions.observe(this) { versions ->
@@ -531,6 +534,7 @@ class FileEditorActivity : AppCompatActivity() {
             appDescriptionInput.isEnabled = enableInputs
             apiKeyInput.isEnabled = enableInputs
             modelSpinner.isEnabled = enableInputs
+            // Update spinner enabled state based on loading AND visibility
             appVersionSpinner.isEnabled = enableInputs && appVersionLayout.visibility == View.VISIBLE
             customModelInputLayout.isEnabled = enableInputs && customModelInputLayout.visibility == View.VISIBLE
             customModelInput.isEnabled = enableInputs && customModelInputLayout.visibility == View.VISIBLE

@@ -47,7 +47,6 @@ class FileEditorActivity : AppCompatActivity() {
         const val EXTRA_PREFILL_APP_DESCRIPTION = "prefill_app_description"
         const val EXTRA_IS_AUTO_RETRY_ATTEMPT = "com.itsaky.androidide.IS_AUTO_RETRY_ATTEMPT"
 
-        // These are less critical now but kept for intent logging/potential other consumers
         const val EXTRA_ENABLE_AUTO_FIX = "com.itsaky.androidide.ENABLE_AUTO_FIX"
         const val EXTRA_INITIAL_APP_DESCRIPTION_FOR_AUTO_FIX = "com.itsaky.androidide.INITIAL_APP_DESCRIPTION_FOR_AUTO_FIX"
 
@@ -74,6 +73,8 @@ class FileEditorActivity : AppCompatActivity() {
     private lateinit var continueButton: Button
     private lateinit var modifyFurtherButton: Button
     private lateinit var autoFixCheckbox: CheckBox
+    private lateinit var appVersionLayout: LinearLayout
+    private lateinit var appVersionSpinner: Spinner
 
     private lateinit var viewModel: FileEditorViewModel
     private var thisInstanceIsOperatingInFullAuto: Boolean = false
@@ -141,23 +142,7 @@ class FileEditorActivity : AppCompatActivity() {
 
             Handler(Looper.getMainLooper()).postDelayed({
                 if (!isFinishing && !isDestroyed) {
-                    val appName = appNameAutocomplete.text.toString().trim()
-                    val descriptionWithFailure = appDescriptionInput.text.toString().trim()
-                    val apiKey = apiKeyInput.text.toString().trim()
-                    val modelId = getSelectedModelIdFromUi()
-
-                    Log.d(DEBUG_TAG, "$TAG_ACTIVITY: onCreate (AutoRetry Delay): appName='$appName', descIsNotBlank=${descriptionWithFailure.isNotBlank()}, apiKeyIsNotBlank=${apiKey.isNotBlank()}, modelId='$modelId'")
-
-                    if (appName.isNotBlank() && descriptionWithFailure.isNotBlank() && apiKey.isNotBlank()) {
-                        Log.i(DEBUG_TAG, "$TAG_ACTIVITY: Auto-retry (onCreate Delay): Triggering ViewModel AI workflow for app: '$appName'.")
-                        viewModel.initiateWorkflow(appName, descriptionWithFailure, apiKey, modelId)
-                    } else {
-                        Log.e(DEBUG_TAG, "$TAG_ACTIVITY: Auto-retry (onCreate Delay): Cannot trigger AI workflow due to missing critical fields. Aborting auto-retry. Disabling global auto-fix.")
-                        Toast.makeText(this@FileEditorActivity, "Auto-retry failed: missing inputs for AI.", Toast.LENGTH_LONG).show()
-                        AutoFixStateManager.disableAutoFixMode()
-                        setResult(Activity.RESULT_CANCELED)
-                        finish()
-                    }
+                    performGenerateOrFinalizeAction()
                 } else {
                     Log.w(DEBUG_TAG, "$TAG_ACTIVITY: onCreate (AutoRetry Delay): Activity finishing/destroyed before AI workflow trigger.")
                 }
@@ -232,6 +217,8 @@ class FileEditorActivity : AppCompatActivity() {
         continueButton = findViewById(R.id.continue_button)
         modifyFurtherButton = findViewById(R.id.modify_further_button)
         autoFixCheckbox = findViewById(R.id.auto_fix_checkbox)
+        appVersionLayout = findViewById(R.id.app_version_layout)
+        appVersionSpinner = findViewById(R.id.app_version_spinner)
 
         appDescriptionInput.movementMethod = ScrollingMovementMethod.getInstance()
         logOutput.movementMethod = ScrollingMovementMethod.getInstance()
@@ -294,35 +281,46 @@ class FileEditorActivity : AppCompatActivity() {
                 thisInstanceIsOperatingInFullAuto = false
                 return
             }
+
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            imm?.hideSoftInputFromWindow(generateButton.windowToken, 0)
         }
 
-        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-        imm?.hideSoftInputFromWindow(generateButton.windowToken, 0)
 
         viewModel.saveApiKey(apiKey)
         viewModel.saveSelectedModel(selectedModelId)
 
-        if (!isTriggeredForImmediateReturn && !isThisAnIncomingAutoRetryIntent) {
-            Log.i(DEBUG_TAG, "$TAG_ACTIVITY: User click on Generate/Modify button. Updating AutoFixStateManager based on checkbox.")
-            if (autoFixCheckbox.isChecked) {
-                if (currentDescription.isNotBlank()) {
-                    AutoFixStateManager.enableAutoFixMode(currentDescription)
-                    thisInstanceIsOperatingInFullAuto = true
-                    Log.i(DEBUG_TAG, "$TAG_ACTIVITY: Auto-fix CHECKED by user and description valid. Global auto-fix ENABLED via AutoFixStateManager. thisInstanceIsOperatingInFullAuto=true.")
+        if (!isTriggeredForImmediateReturn) {
+            // This path is for user-clicks or initial auto-retry trigger
+            if (!isThisAnIncomingAutoRetryIntent) { // User clicked generate
+                Log.i(DEBUG_TAG, "$TAG_ACTIVITY: User click on Generate/Modify button. Updating AutoFixStateManager based on checkbox.")
+                if (autoFixCheckbox.isChecked) {
+                    if (currentDescription.isNotBlank()) {
+                        AutoFixStateManager.enableAutoFixMode(currentDescription)
+                        thisInstanceIsOperatingInFullAuto = true
+                        Log.i(DEBUG_TAG, "$TAG_ACTIVITY: Auto-fix CHECKED by user and description valid. Global auto-fix ENABLED via AutoFixStateManager. thisInstanceIsOperatingInFullAuto=true.")
+                    } else {
+                        Log.w(DEBUG_TAG, "$TAG_ACTIVITY: Auto-fix checkbox checked by user, but description is BLANK. Global auto-fix will NOT be enabled.")
+                        Toast.makeText(this, "App description needed to enable auto-fix.", Toast.LENGTH_LONG).show()
+                        AutoFixStateManager.disableAutoFixMode()
+                        thisInstanceIsOperatingInFullAuto = false
+                        return
+                    }
                 } else {
-                    Log.w(DEBUG_TAG, "$TAG_ACTIVITY: Auto-fix checkbox checked by user, but description is BLANK. Global auto-fix will NOT be enabled.")
-                    Toast.makeText(this, "App description needed to enable auto-fix.", Toast.LENGTH_LONG).show()
                     AutoFixStateManager.disableAutoFixMode()
                     thisInstanceIsOperatingInFullAuto = false
-                    return
+                    Log.i(DEBUG_TAG, "$TAG_ACTIVITY: Auto-fix NOT CHECKED by user. Global auto-fix DISABLED via AutoFixStateManager. thisInstanceIsOperatingInFullAuto=false.")
                 }
-            } else {
-                AutoFixStateManager.disableAutoFixMode()
-                thisInstanceIsOperatingInFullAuto = false
-                Log.i(DEBUG_TAG, "$TAG_ACTIVITY: Auto-fix NOT CHECKED by user. Global auto-fix DISABLED via AutoFixStateManager. thisInstanceIsOperatingInFullAuto=false.")
             }
-            viewModel.initiateWorkflow(appName, currentDescription, apiKey, selectedModelId)
-        } else {
+            val selectedVersion = if (appVersionLayout.visibility == View.VISIBLE && appVersionSpinner.selectedItem != null) {
+                val selectedItemStr = appVersionSpinner.selectedItem.toString()
+                if (selectedItemStr.startsWith("Latest")) null else selectedItemStr
+            } else {
+                null
+            }
+            viewModel.initiateWorkflow(appName, currentDescription, apiKey, selectedModelId, selectedVersion)
+
+        } else { // isTriggeredForImmediateReturn == true
             Log.i(DEBUG_TAG, "$TAG_ACTIVITY: Finalizing and returning RESULT_OK (isTriggeredForImmediateReturn=$isTriggeredForImmediateReturn, isIncomingAutoRetry=$isThisAnIncomingAutoRetryIntent)")
             val resultIntent = Intent()
             resultIntent.putExtra(EXTRA_APP_NAME, appName)
@@ -424,10 +422,16 @@ class FileEditorActivity : AppCompatActivity() {
                 val enteredName = s.toString().trim()
                 val isExisting = enteredName.isNotEmpty() && (viewModel.existingProjectNames.value?.contains(enteredName) == true)
                 viewModel.updateIsModifyingProjectFlag(isExisting)
+
+                if (!isExisting) {
+                    viewModel.onProjectNameClearedOrNew()
+                }
             }
         })
         appNameAutocomplete.setOnItemClickListener { _, _, _, _ ->
+            val selectedAppName = appNameAutocomplete.text.toString()
             viewModel.updateIsModifyingProjectFlag(true)
+            viewModel.onProjectNameSelected(selectedAppName)
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
             imm?.hideSoftInputFromWindow(appNameAutocomplete.windowToken, 0)
             appNameAutocomplete.clearFocus()
@@ -485,6 +489,16 @@ class FileEditorActivity : AppCompatActivity() {
     }
 
     private fun observeViewModel() {
+        viewModel.versionsUiVisible.observe(this) { isVisible ->
+            appVersionLayout.visibility = if (isVisible) View.VISIBLE else View.GONE
+        }
+
+        viewModel.projectVersions.observe(this) { versions ->
+            val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, versions ?: emptyList())
+            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            appVersionSpinner.adapter = adapter
+        }
+
         viewModel.workflowState.observe(this) { state ->
             Log.d(DEBUG_TAG, "$TAG_ACTIVITY: VM State OBSERVED: $state. thisInstanceIsOperatingInFullAuto: $thisInstanceIsOperatingInFullAuto, GlobalAutoFixActive: ${AutoFixStateManager.isAutoFixModeGloballyActive}, autoProceedPending: $autoProceedAfterVmWorkIsPending")
             updateUiBasedOnState(state)
@@ -517,6 +531,7 @@ class FileEditorActivity : AppCompatActivity() {
             appDescriptionInput.isEnabled = enableInputs
             apiKeyInput.isEnabled = enableInputs
             modelSpinner.isEnabled = enableInputs
+            appVersionSpinner.isEnabled = enableInputs && appVersionLayout.visibility == View.VISIBLE
             customModelInputLayout.isEnabled = enableInputs && customModelInputLayout.visibility == View.VISIBLE
             customModelInput.isEnabled = enableInputs && customModelInputLayout.visibility == View.VISIBLE
 

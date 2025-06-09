@@ -27,8 +27,11 @@ import com.itsaky.androidide.actions.ActionData
 import com.itsaky.androidide.actions.ActionItem.Location
 import com.itsaky.androidide.actions.ActionsRegistry
 import com.itsaky.androidide.actions.FillMenuParams
+import com.itsaky.androidide.dialogs.AiWorkflowState
 import com.itsaky.androidide.dialogs.AutoFixStateManager // Corrected import if needed
 import com.itsaky.androidide.dialogs.FileEditorActivity
+import com.itsaky.androidide.dialogs.ProjectOperationsHandler
+import com.itsaky.androidide.dialogs.ViewModelFileEditorBridge
 import com.itsaky.androidide.editor.language.treesitter.JavaLanguage
 import com.itsaky.androidide.editor.language.treesitter.JsonLanguage
 import com.itsaky.androidide.editor.language.treesitter.KotlinLanguage
@@ -64,7 +67,6 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.min
 import com.itsaky.androidide.projects.android.AndroidModule
-import kotlinx.coroutines.withContext
 
 
 open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
@@ -74,8 +76,8 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
 
   companion object {
     private const val DEBUG_TAG = "AutoFixDebug"
+    private const val TAG = "EditorHandlerActivity"
     private const val AI_FIX_RUN_DELAY_MS = 2500L // Increased delay before auto-run
-    // MAX_AUTO_FIX_ATTEMPTS is now in AutoFixStateManager
   }
 
   val isAutoFixModeActivePublic: Boolean
@@ -232,8 +234,6 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     }
   }
 
-  // In EditorHandlerActivity.kt, REPLACE the entire handleBuildFailed method with this:
-
   fun handleBuildFailed(tasks: List<String?>) {
     val capturedLog = getCompleteCapturedBuildOutput()
     val projectManager = ProjectManagerImpl.getInstance()
@@ -241,15 +241,12 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     val currentProjectName: String? = currentProjectFile?.name
     val projectsBaseDirPath: String? = currentProjectFile?.parentFile?.absolutePath
 
-    // --- NEW LOGIC ---
-    // Only trigger the auto-fix cycle if the failure was a real build attempt (not just a sync).
     val wasAssemblyTask = tasks?.any { it?.contains("assemble", ignoreCase = true) == true } ?: false
     if (!wasAssemblyTask) {
       Log.w(DEBUG_TAG, "handleBuildFailed: Build failure was not an assembly task (tasks: ${tasks?.joinToString()}). Showing manual dialog without triggering auto-fix cycle.")
       showManualBuildFailedDialog(capturedLog, currentProjectName, projectsBaseDirPath)
       return
     }
-    // --- END OF NEW LOGIC ---
 
     Log.d(DEBUG_TAG, "handleBuildFailed: Entered for assembly task. Checking AutoFixStateManager.canAttemptAutoFix(). Result: ${AutoFixStateManager.canAttemptAutoFix()}")
 
@@ -317,7 +314,6 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     }
 
     runOnUiThread {
-      // --- START OF CORRECTION ---
       val dialogBuilder = DialogUtils.newCustomMessageDialog(this, getString(R.string.title_build_failed), fullDialogMessage,
         getString(R.string.action_retry_build_with_ai),
         { dialog, _ ->
@@ -330,7 +326,6 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
             val intent = FileEditorActivity.newIntent(this, projectsBaseDirPath).apply{
               putExtra(FileEditorActivity.EXTRA_PREFILL_APP_NAME, currentProjectName)
               putExtra(FileEditorActivity.EXTRA_PREFILL_APP_DESCRIPTION, fullDialogMessage)
-              // EXTRA_IS_AUTO_RETRY_ATTEMPT is false by default
             }
             Log.d(DEBUG_TAG, "showManualBuildFailedDialog: Launching FileEditorActivity for manual AI retry.")
             launchAiEditorInteraction(intent)
@@ -346,12 +341,10 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
           AutoFixStateManager.disableAutoFixMode()
           updateAutoFixModeIndicator()
         }
-      ) // The call to newCustomMessageDialog now ends here
+      )
 
-      // Now, set the cancelable property on the builder and show it
       dialogBuilder.setCancelable(true)
       dialogBuilder.show()
-      // --- END OF CORRECTION ---
     }
   }
 
@@ -375,7 +368,6 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     }
 
     for (module in appModules) {
-      // A common path is module/build/outputs/apk/
       val searchDir = File(module.projectDir, "build/outputs/apk")
       val foundApk = searchInDirectory(searchDir)
       if (foundApk != null) {
@@ -391,7 +383,6 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
   private fun searchInDirectory(directory: File): File? {
     if (!directory.exists() || !directory.isDirectory) return null
 
-    // Prefer debug apks, and get the most recently modified one.
     val apks = directory.walk()
       .filter { it.isFile && it.name.endsWith(".apk") }
       .toList()
@@ -402,15 +393,48 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
   }
 
   fun handleAutoFixBuildSuccess(tasks: List<String?>) {
-    Log.d(DEBUG_TAG, "handleAutoFixBuildSuccess: Entered for tasks: ${tasks.joinToString()}. Global AutoFix Active=${AutoFixStateManager.isAutoFixModeGloballyActive}")
-    if (!AutoFixStateManager.isAutoFixModeGloballyActive) return
-
-    // Check if the successful build was the FINAL assembly task
     val wasAssemblyTask = tasks.any { it?.contains("assemble", ignoreCase = true) == true }
 
     if (wasAssemblyTask) {
-      // --- FINAL SUCCESS ---
-      // This is the true success case. The APK is ready. Find it and install.
+      try {
+        Log.i(TAG, "Full assembly build successful. Creating versioned snapshot.")
+        val projectManager = ProjectManagerImpl.getInstance()
+        val currentProjectDir = projectManager.projectDir
+        val baseProjectName = currentProjectDir.name.substringBeforeLast("_v")
+        val projectsBaseDir = currentProjectDir.parentFile
+
+        if (projectsBaseDir != null) {
+          val dummyBridge = object : ViewModelFileEditorBridge {
+            override var currentProjectDirBridge: File? = null
+            override val isModifyingExistingProjectBridge: Boolean = false
+            override fun updateStateBridge(newState: AiWorkflowState) {}
+            override fun appendToLogBridge(text: String) { Log.i("VersionSnapshot", text) }
+            override fun displayAiConclusionBridge(conclusion: String?) {}
+            override fun handleErrorBridge(message: String, e: Exception?) { Log.e("VersionSnapshot", message, e) }
+            override fun runOnUiThreadBridge(block: () -> Unit) {}
+            override fun getContextBridge(): Context = this@EditorHandlerActivity
+            override fun onTemplateProjectCreatedBridge(projectDir: File, appName: String, appDescription: String) {}
+          }
+
+          val opsHandler = ProjectOperationsHandler(
+            projectsBaseDir = projectsBaseDir,
+            directLogAppender = { msg -> Log.i("VersionSnapshot", msg) },
+            directErrorHandler = { msg, ex -> Log.e("VersionSnapshot", msg, ex) },
+            bridge = dummyBridge
+          )
+
+          opsHandler.createVersionedCopy(currentProjectDir, baseProjectName)
+        }
+      } catch (e: Exception) {
+        Log.e(TAG, "Failed to create versioned snapshot. This will not block app installation.", e)
+        Toast.makeText(this, "Warning: Could not save project snapshot.", Toast.LENGTH_SHORT).show()
+      }
+
+      if (!AutoFixStateManager.isAutoFixModeGloballyActive) {
+        Log.d(DEBUG_TAG, "Build successful, but auto-fix mode is not active. No automatic installation.")
+        return
+      }
+
       Log.i(DEBUG_TAG, "Full assembly build successful. Searching for APK to install.")
       Toast.makeText(this, "Build successful! Installing app...", Toast.LENGTH_LONG).show()
 
@@ -419,7 +443,6 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
         if (apkFile != null) {
           Log.i(DEBUG_TAG, "handleAutoFixBuildSuccess: Found APK at ${apkFile.absolutePath}. Triggering installation.")
           installApk(apkFile)
-          // The full auto cycle is complete. Disable the mode.
           Log.i(DEBUG_TAG, "handleAutoFixBuildSuccess: Disabling auto-fix mode after successful build and run.")
           AutoFixStateManager.disableAutoFixMode()
           updateAutoFixModeIndicator()
@@ -430,15 +453,11 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
           updateAutoFixModeIndicator()
         }
       }
-    } else {
-      // --- PARTIAL SUCCESS ---
-      // This was a successful intermediate step (e.g., resource processing).
-      // The build has stopped and is waiting. We need to re-trigger it to continue.
+    } else if (AutoFixStateManager.isAutoFixModeGloballyActive) {
       Log.w(DEBUG_TAG, "Partial build successful (tasks: ${tasks.joinToString()}). Re-triggering build process to continue.")
 
-      // Add a small delay to prevent frantic loops and let the UI settle.
       lifecycleScope.launch {
-        delay(1500) // 1.5-second delay
+        delay(1500)
         if (isFinishing || isDestroyed) return@launch
 
         Log.i(DEBUG_TAG, "handleAutoFixBuildSuccess: Programmatically 'pressing' the run button again.")
@@ -466,31 +485,9 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
           return@launch
         }
         Log.i(DEBUG_TAG, "onProjectInitialized: Attempting to auto-run project (after AI fix flow / or just because auto-fix is on and sync finished).")
-        val toolbar = content.editorToolbar
-        var runActionFound = false
-        toolbar.menu.forEach { item ->
-          val title = item.title?.toString() ?: ""
-          val contentDesc = item.contentDescription?.toString() ?: ""
-          if ((title.contains("run", ignoreCase = true) || contentDesc.contains("run", ignoreCase = true)) &&
-            item.isEnabled && item.isVisible) {
-            Log.i(DEBUG_TAG, "onProjectInitialized: Found 'Run' action: '${item.title}'. Attempting to perform action.")
-            if (toolbar.menu.performIdentifierAction(item.itemId, 0)) {
-              Log.i(DEBUG_TAG, "onProjectInitialized: 'Run' action performed successfully (this will trigger the actual build).")
-              runActionFound = true
-            } else {
-              Log.w(DEBUG_TAG, "onProjectInitialized: 'Run' action performIdentifierAction returned false for item: ${item.title}")
-            }
-            if (runActionFound) return@forEach
-          }
-        }
-        if (!runActionFound) {
-          Log.e(DEBUG_TAG, "onProjectInitialized: Could not find or trigger 'Run' menu item. Disabling auto-fix as auto-run failed.")
-          Toast.makeText(this@EditorHandlerActivity, "Auto-run: Could not find 'Run' action.", Toast.LENGTH_LONG).show()
-          AutoFixStateManager.disableAutoFixMode()
-          updateAutoFixModeIndicator()
-        }
+        initiateAutoQuickRun()
       }
-    } else if (!result.isSuccessful) { // Auto-fix is NOT globally active AND sync failed
+    } else if (!result.isSuccessful) {
       Log.w(DEBUG_TAG, "onProjectInitialized: Project sync failed, and global auto-fix was NOT active. No special action.")
     }
   }
@@ -500,11 +497,9 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     Log.i(DEBUG_TAG, "postProjectInit: Project sync finished. Successful: $isSuccessful. Global AutoFix Active: ${AutoFixStateManager.isAutoFixModeGloballyActive}. Failure: ${failure?.name}")
     if (!isSuccessful && AutoFixStateManager.isAutoFixModeGloballyActive) {
       Log.w(DEBUG_TAG, "postProjectInit: Project sync FAILED (isSuccessful=false) while AutoFixStateManager was active. Global auto-fix REMAINS ACTIVE. Build from auto-run will determine next steps.")
-      // No longer disabling AutoFixStateManager here. Let the build attempt proceed.
     }
   }
 
-  //<editor-fold desc="Standard File and Editor Operations - KEEP THESE AS THEY ARE (Copied from your provided code)">
   override fun saveOpenedFiles() {
     writeOpenedFilesCache(getOpenedFiles(), getCurrentEditor()?.editor?.file)
   }
@@ -1045,5 +1040,4 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
   private fun getCompleteCapturedBuildOutput(): String {
     return buildLogBuilder.toString().trim()
   }
-  //</editor-fold>
 }

@@ -42,6 +42,32 @@
                     android:hint="App Name (New or Existing)" />
             </com.google.android.material.textfield.TextInputLayout>
 
+            <LinearLayout
+                android:id="@+id/app_version_layout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone"
+                android:layout_marginBottom="8dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Select Version to Work From:"
+                    style="?android:attr/textAppearanceSmall"
+                    android:labelFor="@+id/app_version_spinner"/>
+
+                <Spinner
+                    android:id="@+id/app_version_spinner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:minHeight="48dp"
+                    android:background="@drawable/abc_spinner_textfield_background_material"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"/>
+            </LinearLayout>
+
             <com.google.android.material.textfield.TextInputLayout
                 android:id="@+id/app_description_layout"
                 style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"

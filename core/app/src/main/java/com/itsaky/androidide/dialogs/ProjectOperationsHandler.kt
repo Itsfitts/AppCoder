@@ -15,6 +15,7 @@ import com.itsaky.androidide.templates.EnumParameter
 import com.itsaky.androidide.templates.BooleanParameter
 import java.io.File
 import java.io.IOException
+import java.util.Comparator
 import java.util.Locale
 import kotlin.concurrent.thread
 import com.itsaky.androidide.dialogs.ViewModelFileEditorBridge // Ensure this import is present
@@ -28,11 +29,28 @@ class ProjectOperationsHandler(
 ) {
     companion object {
         private const val TAG = "ProjectOpsHandler"
+        private const val VERSION_SOURCE_FILE = ".version_source"
     }
 
     // logViaInterface and errorViaInterface now use the bridge
     private fun logViaBridge(message: String) = bridge.appendToLogBridge(message)
     private fun errorViaBridge(message: String, e: Exception?) = bridge.handleErrorBridge(message, e)
+
+    private fun getVersionComparator(): Comparator<String> {
+        return Comparator { v1, v2 ->
+            val parts1 = v1.split('.').mapNotNull { it.toIntOrNull() }
+            val parts2 = v2.split('.').mapNotNull { it.toIntOrNull() }
+            val maxParts = maxOf(parts1.size, parts2.size)
+            for (i in 0 until maxParts) {
+                val p1 = parts1.getOrElse(i) { 0 }
+                val p2 = parts2.getOrElse(i) { 0 }
+                if (p1 != p2) {
+                    return@Comparator p1.compareTo(p2)
+                }
+            }
+            0
+        }
+    }
 
     fun projectExists(appName: String): Boolean {
         if (appName.isBlank()) return false
@@ -115,7 +133,123 @@ class ProjectOperationsHandler(
     }
 
     fun listExistingProjectNames(): List<String> {
-        // This can run on a background thread if called from ViewModel's IO scope
-        return projectsBaseDir.listFiles { file -> file.isDirectory }?.map { it.name }?.sorted() ?: emptyList()
+        return projectsBaseDir.listFiles { file -> file.isDirectory }
+            ?.map { it.name.substringBeforeLast("_v") }
+            ?.distinct()
+            ?.sorted()
+            ?: emptyList()
+    }
+
+    fun findProjectVersions(baseAppName: String): List<String> {
+        val fullPatternRegex = "^${Regex.escape(baseAppName)}_v(\\d+(?:\\.\\d+)*)$".toRegex()
+
+        val versions = projectsBaseDir.listFiles { dir ->
+            dir.isDirectory && fullPatternRegex.matches(dir.name)
+        }?.mapNotNull { dir ->
+            // Extract the version number (group 1) from the matched name.
+            fullPatternRegex.find(dir.name)?.groupValues?.get(1)
+        } ?: emptyList()
+
+        // Sort using the custom natural sort comparator to ensure v1.10 comes after v1.2
+        return versions.sortedWith(getVersionComparator())
+    }
+
+    fun overwriteProjectWithVersion(baseProjectName: String, versionProjectName: String): Boolean {
+        logViaBridge("Setting up workbench: Copying '$versionProjectName' to '$baseProjectName'")
+        val baseProjectDir = File(projectsBaseDir, baseProjectName)
+        val versionProjectDir = File(projectsBaseDir, versionProjectName)
+
+        if (!baseProjectDir.exists() || !versionProjectDir.exists()) {
+            val missingDir = if (!baseProjectDir.exists()) baseProjectName else versionProjectName
+            errorViaBridge("Cannot overwrite: Directory '$missingDir' does not exist.", null)
+            return false
+        }
+
+        try {
+            // Clear the workbench directory
+            baseProjectDir.deleteRecursively()
+            baseProjectDir.mkdirs()
+
+            // Copy the contents of the selected version into the workbench
+            versionProjectDir.copyRecursively(baseProjectDir, overwrite = true)
+
+            // Write a hidden file to track the source version for the next snapshot
+            val sourceVersionFile = File(baseProjectDir, VERSION_SOURCE_FILE)
+            sourceVersionFile.writeText(versionProjectName)
+
+            logViaBridge("Workbench setup complete.")
+            return true
+        } catch (e: Exception) {
+            errorViaBridge("Failed to overwrite project with version: ${e.message}", e)
+            return false
+        }
+    }
+
+    fun createVersionedCopy(sourceProjectDir: File, baseProjectName: String): File? {
+        logViaBridge("Attempting to create a versioned snapshot for '$baseProjectName'")
+        if (!sourceProjectDir.exists()) {
+            errorViaBridge("Source project directory does not exist for versioning.", null)
+            return null
+        }
+
+        try {
+            val sourceVersionFile = File(sourceProjectDir, VERSION_SOURCE_FILE)
+            val sourceVersionProjectName = if (sourceVersionFile.exists()) sourceVersionFile.readText().trim() else null
+
+            val newVersionName: String
+
+            if (sourceVersionProjectName != null && sourceVersionProjectName.contains("_v")) {
+                // This is a branch from an existing version
+                val sourceVersionNumber = sourceVersionProjectName.substringAfterLast("_v")
+
+                // Find existing children of this source version
+                val childVersions = findProjectVersions(baseProjectName)
+                    .filter {
+                        it.startsWith("$sourceVersionNumber.") &&
+                                it.count { c -> c == '.' } == sourceVersionNumber.count { c -> c == '.' } + 1
+                    }
+
+                val newVersionNumber = if (childVersions.isEmpty()) {
+                    "$sourceVersionNumber.1" // First branch from this source
+                } else {
+                    // Increment the last known branch
+                    val latestChildVersion = childVersions.sortedWith(getVersionComparator()).last()
+                    val parts = latestChildVersion.split('.').toMutableList()
+                    val lastPart = parts.last().toIntOrNull() ?: 0
+                    parts[parts.size - 1] = (lastPart + 1).toString()
+                    parts.joinToString(".")
+                }
+                newVersionName = "${baseProjectName}_v${newVersionNumber}"
+            } else {
+                // This is a linear progression from the main workbench
+                val allVersions = findProjectVersions(baseProjectName)
+                val latestMajorVersion = allVersions
+                    .filter { !it.contains('.') } // Consider only major versions like v1, v2, v3
+                    .mapNotNull { it.toIntOrNull() }
+                    .maxOrNull() ?: 0
+
+                val newVersionNumber = latestMajorVersion + 1
+                newVersionName = "${baseProjectName}_v${newVersionNumber}"
+            }
+
+            val newVersionDir = File(projectsBaseDir, newVersionName)
+            if (newVersionDir.exists()) {
+                errorViaBridge("Version directory '$newVersionName' already exists. Aborting snapshot.", null)
+                return null
+            }
+
+            logViaBridge("Creating snapshot: '$newVersionName'")
+            sourceProjectDir.copyRecursively(newVersionDir, overwrite = true)
+
+            // The new snapshot is clean; it doesn't have a source version file itself.
+            File(newVersionDir, VERSION_SOURCE_FILE).delete()
+
+            logViaBridge("Successfully created snapshot at '${newVersionDir.absolutePath}'")
+            return newVersionDir
+
+        } catch (e: Exception) {
+            errorViaBridge("Failed to create versioned copy: ${e.message}", e)
+            return null
+        }
     }
 }

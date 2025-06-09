@@ -28,7 +28,7 @@ import com.itsaky.androidide.actions.ActionItem.Location
 import com.itsaky.androidide.actions.ActionsRegistry
 import com.itsaky.androidide.actions.FillMenuParams
 import com.itsaky.androidide.dialogs.AiWorkflowState
-import com.itsaky.androidide.dialogs.AutoFixStateManager // Corrected import if needed
+import com.itsaky.androidide.dialogs.AutoFixStateManager
 import com.itsaky.androidide.dialogs.FileEditorActivity
 import com.itsaky.androidide.dialogs.ProjectOperationsHandler
 import com.itsaky.androidide.dialogs.ViewModelFileEditorBridge
@@ -48,6 +48,7 @@ import com.itsaky.androidide.models.OpenedFile
 import com.itsaky.androidide.models.OpenedFilesCache
 import com.itsaky.androidide.models.Range
 import com.itsaky.androidide.models.SaveResult
+import com.itsaky.androidide.projects.android.AndroidModule
 import com.itsaky.androidide.projects.internal.ProjectManagerImpl
 import com.itsaky.androidide.tooling.api.messages.result.InitializeResult
 import com.itsaky.androidide.tooling.api.messages.result.TaskExecutionResult
@@ -66,8 +67,6 @@ import org.greenrobot.eventbus.ThreadMode
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.min
-import com.itsaky.androidide.projects.android.AndroidModule
-
 
 open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
 
@@ -77,7 +76,7 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
   companion object {
     private const val DEBUG_TAG = "AutoFixDebug"
     private const val TAG = "EditorHandlerActivity"
-    private const val AI_FIX_RUN_DELAY_MS = 2500L // Increased delay before auto-run
+    private const val AI_FIX_RUN_DELAY_MS = 2500L
   }
 
   val isAutoFixModeActivePublic: Boolean
@@ -99,7 +98,7 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
           updateAutoFixModeIndicator()
           return@registerForActivityResult
         }
-        updateAutoFixModeIndicator() // Update based on state set by FileEditorActivity
+        updateAutoFixModeIndicator()
 
         val newProjectDir = File(projectPathFromResult)
         val projectManager = ProjectManagerImpl.getInstance()
@@ -382,59 +381,21 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
 
   private fun searchInDirectory(directory: File): File? {
     if (!directory.exists() || !directory.isDirectory) return null
-
     val apks = directory.walk()
       .filter { it.isFile && it.name.endsWith(".apk") }
       .toList()
-
     return apks.filter { it.name.contains("debug", ignoreCase = true) }
       .maxByOrNull { it.lastModified() }
       ?: apks.maxByOrNull { it.lastModified() }
   }
 
   fun handleAutoFixBuildSuccess(tasks: List<String?>) {
+    Log.d(DEBUG_TAG, "handleAutoFixBuildSuccess: Entered for tasks: ${tasks.joinToString()}. Global AutoFix Active=${AutoFixStateManager.isAutoFixModeGloballyActive}")
+    if (!AutoFixStateManager.isAutoFixModeGloballyActive) return
+
     val wasAssemblyTask = tasks.any { it?.contains("assemble", ignoreCase = true) == true }
 
     if (wasAssemblyTask) {
-      try {
-        Log.i(TAG, "Full assembly build successful. Creating versioned snapshot.")
-        val projectManager = ProjectManagerImpl.getInstance()
-        val currentProjectDir = projectManager.projectDir
-        val baseProjectName = currentProjectDir.name.substringBeforeLast("_v")
-        val projectsBaseDir = currentProjectDir.parentFile
-
-        if (projectsBaseDir != null) {
-          val dummyBridge = object : ViewModelFileEditorBridge {
-            override var currentProjectDirBridge: File? = null
-            override val isModifyingExistingProjectBridge: Boolean = false
-            override fun updateStateBridge(newState: AiWorkflowState) {}
-            override fun appendToLogBridge(text: String) { Log.i("VersionSnapshot", text) }
-            override fun displayAiConclusionBridge(conclusion: String?) {}
-            override fun handleErrorBridge(message: String, e: Exception?) { Log.e("VersionSnapshot", message, e) }
-            override fun runOnUiThreadBridge(block: () -> Unit) {}
-            override fun getContextBridge(): Context = this@EditorHandlerActivity
-            override fun onTemplateProjectCreatedBridge(projectDir: File, appName: String, appDescription: String) {}
-          }
-
-          val opsHandler = ProjectOperationsHandler(
-            projectsBaseDir = projectsBaseDir,
-            directLogAppender = { msg -> Log.i("VersionSnapshot", msg) },
-            directErrorHandler = { msg, ex -> Log.e("VersionSnapshot", msg, ex) },
-            bridge = dummyBridge
-          )
-
-          opsHandler.createVersionedCopy(currentProjectDir, baseProjectName)
-        }
-      } catch (e: Exception) {
-        Log.e(TAG, "Failed to create versioned snapshot. This will not block app installation.", e)
-        Toast.makeText(this, "Warning: Could not save project snapshot.", Toast.LENGTH_SHORT).show()
-      }
-
-      if (!AutoFixStateManager.isAutoFixModeGloballyActive) {
-        Log.d(DEBUG_TAG, "Build successful, but auto-fix mode is not active. No automatic installation.")
-        return
-      }
-
       Log.i(DEBUG_TAG, "Full assembly build successful. Searching for APK to install.")
       Toast.makeText(this, "Build successful! Installing app...", Toast.LENGTH_LONG).show()
 
@@ -453,9 +414,8 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
           updateAutoFixModeIndicator()
         }
       }
-    } else if (AutoFixStateManager.isAutoFixModeGloballyActive) {
+    } else {
       Log.w(DEBUG_TAG, "Partial build successful (tasks: ${tasks.joinToString()}). Re-triggering build process to continue.")
-
       lifecycleScope.launch {
         delay(1500)
         if (isFinishing || isDestroyed) return@launch

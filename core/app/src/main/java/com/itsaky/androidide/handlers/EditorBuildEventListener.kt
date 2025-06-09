@@ -17,10 +17,16 @@
 
 package com.itsaky.androidide.handlers
 
+import android.content.Context
 import android.util.Log
+import android.widget.Toast
 import com.itsaky.androidide.R
 import com.itsaky.androidide.activities.editor.EditorHandlerActivity
+import com.itsaky.androidide.dialogs.AiWorkflowState
+import com.itsaky.androidide.dialogs.ProjectOperationsHandler
+import com.itsaky.androidide.dialogs.ViewModelFileEditorBridge
 import com.itsaky.androidide.preferences.internal.GeneralPreferences
+import com.itsaky.androidide.projects.internal.ProjectManagerImpl
 import com.itsaky.androidide.resources.R.string
 import com.itsaky.androidide.services.builder.GradleBuildService
 import com.itsaky.androidide.tooling.api.messages.result.BuildInfo
@@ -29,12 +35,14 @@ import com.itsaky.androidide.tooling.events.configuration.ProjectConfigurationSt
 import com.itsaky.androidide.tooling.events.task.TaskStartEvent
 import com.itsaky.androidide.utils.flashSuccess
 import org.slf4j.LoggerFactory
+import java.io.File
 import java.lang.ref.WeakReference
 
 class EditorBuildEventListener : GradleBuildService.EventListener {
 
   private val slf4jLogger = LoggerFactory.getLogger(EditorBuildEventListener::class.java)
   private val DEBUG_TAG = "AutoFixDebug"
+  private val TAG = "EditorBuildEventListener" // Add a tag for our new logic
 
   private var enabled = true
   private var activityReference: WeakReference<EditorHandlerActivity> = WeakReference(null)
@@ -82,15 +90,57 @@ class EditorBuildEventListener : GradleBuildService.EventListener {
   }
 
   override fun onBuildSuccessful(tasks: List<String?>) {
-    Log.d(DEBUG_TAG, "EditorBuildEventListener: onBuildSuccessful called for tasks: ${tasks?.joinToString()}")
+    Log.d(DEBUG_TAG, "onBuildSuccessful called for tasks: ${tasks?.joinToString()}")
     val currentActivity = checkActivity("onBuildSuccessful") ?: return
     analyzeCurrentFile()
     GeneralPreferences.isFirstBuild = false
     currentActivity.editorViewModel.isBuildInProgress = false
 
-    Log.d(DEBUG_TAG, "EditorBuildEventListener: onBuildSuccessful - isAutoFixModeActivePublic=${currentActivity.isAutoFixModeActivePublic}")
+    val wasAssemblyTask = tasks?.any { it?.contains("assemble", ignoreCase = true) == true } ?: false
+
+    // *** FIX 1: The snapshot logic is now here, independent of auto-fix mode. ***
+    if (wasAssemblyTask) {
+      Log.i(TAG, "Full assembly build successful. Creating versioned snapshot.")
+      Toast.makeText(currentActivity, "Build Succeeded! Saving snapshot...", Toast.LENGTH_SHORT).show()
+      try {
+        val projectManager = ProjectManagerImpl.getInstance()
+        val currentProjectDir = projectManager.projectDir
+        val baseProjectName = currentProjectDir.name.substringBeforeLast("_v")
+        val projectsBaseDir = currentProjectDir.parentFile
+
+        if (projectsBaseDir != null) {
+          // Create a dummy bridge because the handler needs it, but we don't need UI updates here.
+          val dummyBridge = object : ViewModelFileEditorBridge {
+            override var currentProjectDirBridge: File? = null
+            override val isModifyingExistingProjectBridge: Boolean = false
+            override fun updateStateBridge(newState: AiWorkflowState) {}
+            override fun appendToLogBridge(text: String) { Log.i("VersionSnapshot", text) }
+            override fun displayAiConclusionBridge(conclusion: String?) {}
+            override fun handleErrorBridge(message: String, e: Exception?) { Log.e("VersionSnapshot", message, e) }
+            override fun runOnUiThreadBridge(block: () -> Unit) {}
+            override fun getContextBridge(): Context = currentActivity
+            override fun onTemplateProjectCreatedBridge(projectDir: File, appName: String, appDescription: String) {}
+          }
+
+          val opsHandler = ProjectOperationsHandler(
+            projectsBaseDir = projectsBaseDir,
+            directLogAppender = { msg -> Log.i("VersionSnapshot", msg) },
+            directErrorHandler = { msg, ex -> Log.e("VersionSnapshot", msg, ex) },
+            bridge = dummyBridge
+          )
+
+          // This now runs on every successful final build.
+          opsHandler.createVersionedCopy(currentProjectDir, baseProjectName)
+        }
+      } catch (e: Exception) {
+        Log.e(TAG, "Failed to create versioned snapshot. This will not block app installation.", e)
+        Toast.makeText(currentActivity, "Warning: Could not save project snapshot.", Toast.LENGTH_SHORT).show()
+      }
+    }
+
+    // *** FIX 2: Auto-fix logic is now correctly gated and separate. ***
     if (currentActivity.isAutoFixModeActivePublic) {
-      Log.i(DEBUG_TAG, "EditorBuildEventListener: onBuildSuccessful - Auto-fix was active. Calling handleAutoFixBuildSuccess.")
+      Log.i(DEBUG_TAG, "onBuildSuccessful - Auto-fix is active. Calling handleAutoFixBuildSuccess.")
       currentActivity.handleAutoFixBuildSuccess(tasks)
     } else {
       currentActivity.flashSuccess(R.string.build_status_sucess)
@@ -114,8 +164,6 @@ class EditorBuildEventListener : GradleBuildService.EventListener {
     GeneralPreferences.isFirstBuild = false
     currentActivity.editorViewModel.isBuildInProgress = false
     Log.i(DEBUG_TAG, "EditorBuildEventListener: onBuildFailed - Calling currentActivity.handleBuildFailed()")
-
-    // Pass the failing tasks to the handler
     currentActivity.handleBuildFailed(tasks)
   }
 

@@ -8,11 +8,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
+import com.itsaky.androidide.dialogs.GeminiHelper.Companion.DEFAULT_GEMINI_MODEL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import com.itsaky.androidide.dialogs.GeminiHelper.Companion.DEFAULT_GEMINI_MODEL
 
 class FileEditorViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -114,7 +114,6 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
                 _currentProjectDirVM.value = projectDir
                 appendToViewModelLog("✅ Base project template created (via bridge): ${projectDir.absolutePath}\n")
                 if (currentApiKeyForWorkflow.isNotBlank()) {
-                    // This is always a new project, so it uses the powerful prompt.
                     val enhancedPrompt = buildGenerationPrompt(appName, appDescription)
                     geminiWorkflowCoordinator.startModificationFlow(appName, enhancedPrompt, projectDir)
                 } else {
@@ -185,9 +184,7 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
         _versionsUiVisible.postValue(false)
     }
 
-    fun refreshExistingProjectNames() {
-        loadExistingProjectNames()
-    }
+    fun refreshExistingProjectNames() = loadExistingProjectNames()
 
     fun saveApiKey(apiKey: String) {
         val trimmedApiKey = apiKey.trim()
@@ -207,9 +204,7 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    fun postUiFeedbackLog(message: String) {
-        appendToViewModelLog(message)
-    }
+    fun postUiFeedbackLog(message: String) = appendToViewModelLog(message)
 
     private fun buildGenerationPrompt(appName: String, userDescription: String): String {
         return """
@@ -227,7 +222,6 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
         currentApiKeyForWorkflow = apiKey
-
         saveApiKey(apiKey)
         saveSelectedModel(selectedModelId)
 
@@ -235,40 +229,63 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
         _logOutputString.postValue("")
         _aiConclusion.postValue(null)
         updateViewModelState(AiWorkflowState.IDLE)
-
         appendToViewModelLog("Workflow initiated for App: $appName, Model: $selectedModelId\n")
+        Log.i(TAG, "WORKFLOW_START: App: '$appName', SelectedVersion: '$selectedVersion'")
 
-        val isModificationFromVersion = selectedVersion != null && !selectedVersion.startsWith("Latest")
-        val isRetryPrompt = appDescription.contains("Please analyze the original app description and the following build failure", ignoreCase = true)
-
-        // CRITICAL FIX: The prompt is selected based on user intent.
-        val finalPrompt = when {
-            isRetryPrompt -> {
-                appendToViewModelLog("This is a retry-on-failure workflow. Using the description as-is.\n")
-                appDescription
-            }
-            // Using the raw description for branching prevents the AI from deleting the bookmark.
-            isModificationFromVersion -> {
-                appendToViewModelLog("This is a branching workflow. Using the user's description directly to ensure precision.\n")
-                appDescription
-            }
-            else -> {
-                appendToViewModelLog("This is a new/linear workflow. Building enhanced prompt.\n")
-                buildGenerationPrompt(appName, appDescription)
-            }
-        }
+        val isRetryPrompt = appDescription.contains("Please analyze the original app description", ignoreCase = true)
 
         viewModelScope.launch(Dispatchers.IO) {
-            if (isModificationFromVersion && !isRetryPrompt) {
+            var shouldBranch = false
+            var finalPrompt = appDescription
+
+            val isModificationFromSpecificVersion = selectedVersion != null && !selectedVersion.startsWith("Latest")
+            Log.d(TAG, "isModificationFromSpecificVersion: $isModificationFromSpecificVersion")
+
+            if (isModificationFromSpecificVersion && !isRetryPrompt) {
+                val numericSelectedVersion = selectedVersion!!.substringAfter("_v")
+                Log.d(TAG, "User selected specific version: '$numericSelectedVersion'")
+
+                val allVersions = projectOperationsHandler.findProjectVersions(appName)
+                val latestVersion = allVersions.lastOrNull()
+                Log.d(TAG, "All versions found: $allVersions. Latest version is: $latestVersion")
+
+                if (latestVersion != null && numericSelectedVersion != latestVersion) {
+                    shouldBranch = true
+                    Log.i(TAG, "BRANCHING_DECISION: TRUE. Selected version ('$numericSelectedVersion') is not the latest ('$latestVersion').")
+                } else {
+                    shouldBranch = false
+                    Log.i(TAG, "BRANCHING_DECISION: FALSE. Selected version is the latest or no other versions exist.")
+                }
+
                 updateViewModelState(AiWorkflowState.PREPARING_EXISTING_PROJECT)
-                appendToViewModelLog("Preparing workbench from selected version: $selectedVersion\n")
+                val workbenchMessage = if (shouldBranch) "for branching" else "to reset to latest"
+                appendToViewModelLog("Preparing workbench from $selectedVersion $workbenchMessage\n")
                 val versionProjectName = "${appName}${selectedVersion}"
-                val success = projectOperationsHandler.overwriteProjectWithVersion(appName, versionProjectName)
-                if (!success) {
+
+                Log.i(TAG, "Calling overwriteProjectWithVersion. shouldBranch = $shouldBranch")
+                val success = projectOperationsHandler.overwriteProjectWithVersion(appName, versionProjectName, shouldBranch)
+                if(!success) {
+                    Log.e(TAG, "overwriteProjectWithVersion failed. Aborting workflow.")
                     return@launch
                 }
-            } else if (isRetryPrompt) {
+
+            } else if(isRetryPrompt) {
                 appendToViewModelLog("Automated Retry: Skipping workbench overwrite.\n")
+                Log.i(TAG, "This is an automated retry, skipping workbench overwrite.")
+            } else {
+                Log.i(TAG, "This is a new/linear modification from 'Latest'. No workbench overwrite needed.")
+            }
+
+            if (!isRetryPrompt) {
+                finalPrompt = if (shouldBranch) {
+                    Log.i(TAG, "PROMPT_SELECTION: Branching workflow. Using simple prompt to protect bookmark.")
+                    appDescription
+                } else {
+                    Log.i(TAG, "PROMPT_SELECTION: Linear workflow. Using enhanced generation prompt.")
+                    buildGenerationPrompt(appName, appDescription)
+                }
+            } else {
+                Log.i(TAG, "PROMPT_SELECTION: Retry workflow. Using provided description as-is.")
             }
 
             try {
@@ -277,14 +294,12 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
                 val isExistingProject = projectOperationsHandler.projectExists(appName)
 
                 if (isExistingProject) {
-                    appendToViewModelLog("Project exists. Starting modification flow...\n")
+                    Log.d(TAG, "Project exists. Starting modification flow...")
                     geminiWorkflowCoordinator.startModificationFlow(appName, finalPrompt, projectDir)
                 } else {
-                    appendToViewModelLog("Project does not exist. Creating new project template...\n")
+                    Log.d(TAG, "Project does not exist. Starting new project template creation...")
                     updateViewModelState(AiWorkflowState.CREATING_PROJECT_TEMPLATE)
-                    projectOperationsHandler.createNewProjectFromTemplate(appName) {
-                        Log.d(TAG, "Template creation background task complete for $appName")
-                    }
+                    projectOperationsHandler.createNewProjectFromTemplate(appName, finalPrompt)
                 }
             } catch (e: Exception) {
                 handleViewModelError("Error initiating workflow: ${e.message}", e)
@@ -293,20 +308,18 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private fun runOnMainThread(block: () -> Unit) {
-        viewModelScope.launch(Dispatchers.Main) {
-            block()
-        }
+        viewModelScope.launch(Dispatchers.Main) { block() }
     }
 
     private fun appendToViewModelLog(text: String) {
-        viewModelScope.launch(Dispatchers.Main) {
+        runOnMainThread {
             _logOutput.value?.append(text)
             _logOutputString.value = _logOutput.value.toString()
         }
     }
 
     private fun handleViewModelError(message: String, e: Exception?) {
-        viewModelScope.launch(Dispatchers.Main) {
+        runOnMainThread {
             if (e != null) { Log.e(TAG, message, e) } else { Log.e(TAG, message) }
             _logOutput.value?.append("❌ ERROR: $message\n")
             _logOutputString.value = _logOutput.value.toString()
@@ -315,9 +328,7 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    fun consumedUiErrorEvent() {
-        _uiErrorEvent.value = null
-    }
+    fun consumedUiErrorEvent() { _uiErrorEvent.value = null }
 
     private fun updateViewModelState(newState: AiWorkflowState) {
         runOnMainThread {

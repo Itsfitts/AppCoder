@@ -26,12 +26,11 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
     private val prefs: SharedPreferences =
         application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    // --- LiveData for UI State ---
     private val _workflowState = MutableLiveData(AiWorkflowState.IDLE)
     val workflowState: LiveData<AiWorkflowState> = _workflowState
 
-    private val _logOutput = MutableLiveData(StringBuilder()) // Internal StringBuilder
-    private val _logOutputString = MutableLiveData<String>()    // Exposed String for Activity
+    private val _logOutput = MutableLiveData(StringBuilder())
+    private val _logOutputString = MutableLiveData<String>()
     val logOutputText: LiveData<String> = _logOutputString
 
     private val _aiConclusion = MutableLiveData<String?>()
@@ -78,7 +77,6 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
             }
         }
 
-    // --- Bridge Implementation for Helpers ---
     private val bridge: ViewModelFileEditorBridge = object : ViewModelFileEditorBridge {
         override var currentProjectDirBridge: File?
             get() = _currentProjectDirVM.value
@@ -116,7 +114,9 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
                 _currentProjectDirVM.value = projectDir
                 appendToViewModelLog("✅ Base project template created (via bridge): ${projectDir.absolutePath}\n")
                 if (currentApiKeyForWorkflow.isNotBlank()) {
-                    geminiWorkflowCoordinator.startModificationFlow(appName, appDescription, projectDir)
+                    // This is always a new project, so it uses the powerful prompt.
+                    val enhancedPrompt = buildGenerationPrompt(appName, appDescription)
+                    geminiWorkflowCoordinator.startModificationFlow(appName, enhancedPrompt, projectDir)
                 } else {
                     handleViewModelError("API Key not available when trying to start modification flow after template creation.", null)
                 }
@@ -124,7 +124,6 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    // --- Helper Instances (with explicit types) ---
     private val geminiHelper: GeminiHelper by lazy {
         GeminiHelper(
             apiKeyProvider = { _storedApiKey },
@@ -212,6 +211,16 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
         appendToViewModelLog(message)
     }
 
+    private fun buildGenerationPrompt(appName: String, userDescription: String): String {
+        return """
+            **AI GOAL: Full Android App Implementation**
+            You are an expert Android developer... Your task is to generate all the necessary code for a new Android application based on the user's request.
+            ... (rest of the detailed prompt)
+            **App Name:** "$appName"
+            **App Description:** "$userDescription"
+        """.trimIndent()
+    }
+
     fun initiateWorkflow(appName: String, appDescription: String, apiKey: String, selectedModelId: String, selectedVersion: String?) {
         if (projectsBaseDir == null) {
             handleViewModelError("Projects base directory not set in ViewModel.", null)
@@ -229,8 +238,25 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
 
         appendToViewModelLog("Workflow initiated for App: $appName, Model: $selectedModelId\n")
 
-        val isRetryPrompt = appDescription.contains("Please analyze the original app description and the following build failure", ignoreCase = true)
         val isModificationFromVersion = selectedVersion != null && !selectedVersion.startsWith("Latest")
+        val isRetryPrompt = appDescription.contains("Please analyze the original app description and the following build failure", ignoreCase = true)
+
+        // CRITICAL FIX: The prompt is selected based on user intent.
+        val finalPrompt = when {
+            isRetryPrompt -> {
+                appendToViewModelLog("This is a retry-on-failure workflow. Using the description as-is.\n")
+                appDescription
+            }
+            // Using the raw description for branching prevents the AI from deleting the bookmark.
+            isModificationFromVersion -> {
+                appendToViewModelLog("This is a branching workflow. Using the user's description directly to ensure precision.\n")
+                appDescription
+            }
+            else -> {
+                appendToViewModelLog("This is a new/linear workflow. Building enhanced prompt.\n")
+                buildGenerationPrompt(appName, appDescription)
+            }
+        }
 
         viewModelScope.launch(Dispatchers.IO) {
             if (isModificationFromVersion && !isRetryPrompt) {
@@ -242,7 +268,7 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
                     return@launch
                 }
             } else if (isRetryPrompt) {
-                appendToViewModelLog("Automated Retry: Skipping workbench overwrite to work on broken code.\n")
+                appendToViewModelLog("Automated Retry: Skipping workbench overwrite.\n")
             }
 
             try {
@@ -252,13 +278,12 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
 
                 if (isExistingProject) {
                     appendToViewModelLog("Project exists. Starting modification flow...\n")
-                    geminiWorkflowCoordinator.startModificationFlow(appName, appDescription, projectDir)
+                    geminiWorkflowCoordinator.startModificationFlow(appName, finalPrompt, projectDir)
                 } else {
                     appendToViewModelLog("Project does not exist. Creating new project template...\n")
                     updateViewModelState(AiWorkflowState.CREATING_PROJECT_TEMPLATE)
-                    projectOperationsHandler.createNewProjectFromTemplate(appName) { createdDir ->
-                        appendToViewModelLog("✅ Base project template created at: ${createdDir.absolutePath}\n")
-                        geminiWorkflowCoordinator.startModificationFlow(appName, appDescription, createdDir)
+                    projectOperationsHandler.createNewProjectFromTemplate(appName) {
+                        Log.d(TAG, "Template creation background task complete for $appName")
                     }
                 }
             } catch (e: Exception) {

@@ -18,21 +18,20 @@ import java.io.IOException
 import java.util.Comparator
 import java.util.Locale
 import kotlin.concurrent.thread
-import com.itsaky.androidide.dialogs.ViewModelFileEditorBridge // Ensure this import is present
-import com.itsaky.androidide.dialogs.AiWorkflowState // Ensure this import is present
+import com.itsaky.androidide.dialogs.ViewModelFileEditorBridge
+import com.itsaky.androidide.dialogs.AiWorkflowState
 
 class ProjectOperationsHandler(
     private val projectsBaseDir: File,
     private val directLogAppender: (String) -> Unit,
     private val directErrorHandler: (String, Exception?) -> Unit,
-    private val bridge: ViewModelFileEditorBridge // Correct: uses ViewModelFileEditorBridge
+    private val bridge: ViewModelFileEditorBridge
 ) {
     companion object {
         private const val TAG = "ProjectOpsHandler"
         private const val VERSION_SOURCE_FILE = ".version_source"
     }
 
-    // logViaInterface and errorViaInterface now use the bridge
     private fun logViaBridge(message: String) = bridge.appendToLogBridge(message)
     private fun errorViaBridge(message: String, e: Exception?) = bridge.handleErrorBridge(message, e)
 
@@ -58,18 +57,17 @@ class ProjectOperationsHandler(
         return projectDir.exists() && projectDir.isDirectory
     }
 
-    fun createNewProjectFromTemplate(appName: String, onCompleteBackground: (projectDir: File) -> Unit) { // onComplete can be used by ViewModel for background tasks if needed
+    fun createNewProjectFromTemplate(appName: String, onCompleteBackground: (projectDir: File) -> Unit) {
         logViaBridge("Starting new project template creation for: $appName\n")
         bridge.updateStateBridge(AiWorkflowState.CREATING_PROJECT_TEMPLATE)
 
-        thread { // Perform template creation on a background thread
+        thread {
             try {
                 val packageName = createPackageName(appName)
                 val projectDir = File(projectsBaseDir, appName)
 
                 if (projectDir.exists()) {
                     errorViaBridge("Project directory '$appName' already exists.", null)
-                    // State update will be handled by errorViaBridge -> bridge.updateStateBridge
                     return@thread
                 }
 
@@ -79,14 +77,13 @@ class ProjectOperationsHandler(
                 val projectDetails = NewProjectDetails().apply {
                     this.name = appName
                     this.packageName = packageName
-                    this.minSdk = 21 // Example, ensure these are correct
-                    this.targetSdk = 34 // Example
-                    this.language = "kotlin" // Example
+                    this.minSdk = 21
+                    this.targetSdk = 34
+                    this.language = "kotlin"
                     this.savePath = projectsBaseDir.absolutePath
                 }
 
-                val template: ProjectTemplate = basicActivityProject() // Ensure this is valid
-                // ... (Parameter setting logic remains the same)
+                val template: ProjectTemplate = basicActivityProject()
                 val iterator = template.parameters.iterator()
                 try {
                     (iterator.next() as? StringParameter)?.setValue(projectDetails.name)
@@ -104,25 +101,22 @@ class ProjectOperationsHandler(
                     throw IOException("Failed to set template parameters using iterator: ${e.message}", e)
                 }
 
-
-                val executor: RecipeExecutor = TemplateRecipeExecutor() // Ensure this is correctly imported and works
+                val executor: RecipeExecutor = TemplateRecipeExecutor()
                 logViaBridge("Executing project template recipe (ID: ${template.templateId})...\n")
                 val result: ProjectTemplateRecipeResult? = template.recipe.execute(executor)
 
                 if (result?.data?.projectDir != null) {
                     val createdProjectDir = result.data.projectDir
-                    // Use the bridge to notify completion, which runs on UI thread via ViewModel
-                    bridge.onTemplateProjectCreatedBridge(createdProjectDir, appName, "N/A" /*appDescription if available*/)
-                    onCompleteBackground(createdProjectDir) // Call the background completion too
+                    bridge.onTemplateProjectCreatedBridge(createdProjectDir, appName, "N/A")
+                    onCompleteBackground(createdProjectDir)
                 } else {
                     val failureMessage = "Template execution failed or did not return project directory. Result: $result."
-                    Log.e(TAG, failureMessage) // Internal log
+                    Log.e(TAG, failureMessage)
                     throw IOException(failureMessage)
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error creating project from template", e) // Internal log
+                Log.e(TAG, "Error creating project from template", e)
                 errorViaBridge("Failed to create project template: ${e.message}", e)
-                // State update to ERROR is handled by errorViaBridge
             }
         }
     }
@@ -146,11 +140,9 @@ class ProjectOperationsHandler(
         val versions = projectsBaseDir.listFiles { dir ->
             dir.isDirectory && fullPatternRegex.matches(dir.name)
         }?.mapNotNull { dir ->
-            // Extract the version number (group 1) from the matched name.
             fullPatternRegex.find(dir.name)?.groupValues?.get(1)
         } ?: emptyList()
 
-        // Sort using the custom natural sort comparator to ensure v1.10 comes after v1.2
         return versions.sortedWith(getVersionComparator())
     }
 
@@ -166,18 +158,15 @@ class ProjectOperationsHandler(
         }
 
         try {
-            // Clear the workbench directory
             baseProjectDir.deleteRecursively()
             baseProjectDir.mkdirs()
-
-            // Copy the contents of the selected version into the workbench
             versionProjectDir.copyRecursively(baseProjectDir, overwrite = true)
 
-            // Write a hidden file to track the source version for the next snapshot
+            // This is correct: a bookmark MUST be created to signal the intent to branch.
             val sourceVersionFile = File(baseProjectDir, VERSION_SOURCE_FILE)
             sourceVersionFile.writeText(versionProjectName)
 
-            logViaBridge("Workbench setup complete.")
+            logViaBridge("Workbench setup complete for branching.")
             return true
         } catch (e: Exception) {
             errorViaBridge("Failed to overwrite project with version: ${e.message}", e)
@@ -199,32 +188,36 @@ class ProjectOperationsHandler(
             val newVersionName: String
 
             if (sourceVersionProjectName != null && sourceVersionProjectName.contains("_v")) {
-                // This is a branch from an existing version
+                // BRANCHING LOGIC
+                logViaBridge("Branching from source: $sourceVersionProjectName")
                 val sourceVersionNumber = sourceVersionProjectName.substringAfterLast("_v")
 
-                // Find existing children of this source version
-                val childVersions = findProjectVersions(baseProjectName)
-                    .filter {
-                        it.startsWith("$sourceVersionNumber.") &&
-                                it.count { c -> c == '.' } == sourceVersionNumber.count { c -> c == '.' } + 1
-                    }
+                val allVersions = findProjectVersions(baseProjectName)
+
+                val childVersions = allVersions.filter { version ->
+                    version.startsWith("$sourceVersionNumber.") &&
+                            version.split('.').size == sourceVersionNumber.split('.').size + 1
+                }
 
                 val newVersionNumber = if (childVersions.isEmpty()) {
-                    "$sourceVersionNumber.1" // First branch from this source
+                    "$sourceVersionNumber.1"
                 } else {
-                    // Increment the last known branch
-                    val latestChildVersion = childVersions.sortedWith(getVersionComparator()).last()
-                    val parts = latestChildVersion.split('.').toMutableList()
+                    val latestChild = childVersions.sortedWith(getVersionComparator()).last()
+                    val parts = latestChild.split('.').toMutableList()
                     val lastPart = parts.last().toIntOrNull() ?: 0
                     parts[parts.size - 1] = (lastPart + 1).toString()
                     parts.joinToString(".")
                 }
+
                 newVersionName = "${baseProjectName}_v${newVersionNumber}"
+
             } else {
-                // This is a linear progression from the main workbench
+                // LINEAR PROGRESSION LOGIC
+                logViaBridge("Creating next linear version.")
                 val allVersions = findProjectVersions(baseProjectName)
+
                 val latestMajorVersion = allVersions
-                    .filter { !it.contains('.') } // Consider only major versions like v1, v2, v3
+                    .filter { !it.contains('.') }
                     .mapNotNull { it.toIntOrNull() }
                     .maxOrNull() ?: 0
 
@@ -241,8 +234,13 @@ class ProjectOperationsHandler(
             logViaBridge("Creating snapshot: '$newVersionName'")
             sourceProjectDir.copyRecursively(newVersionDir, overwrite = true)
 
-            // The new snapshot is clean; it doesn't have a source version file itself.
             File(newVersionDir, VERSION_SOURCE_FILE).delete()
+
+            // CRITICAL FIX: The bookmark must be cleaned from the workbench to reset its state.
+            if (sourceVersionFile.exists()) {
+                sourceVersionFile.delete()
+                logViaBridge("Cleaned up version source file from workbench.")
+            }
 
             logViaBridge("Successfully created snapshot at '${newVersionDir.absolutePath}'")
             return newVersionDir

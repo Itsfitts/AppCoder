@@ -1,6 +1,6 @@
 # 📱 AppCoder: Turn Your App Ideas into Reality – Right On Your Phone!
 
-**AppCoder** is a mobile Android app that empowers you to build your own apps directly on your phone — no programming experience required! You only need to describe your app and it will be build automatically.
+**AppCoder** is a mobile Android app that empowers you to build your own ANdroid apps directly on your phone — no programming experience required! You only need to describe your app and it will be build automatically.
 
 ---
 

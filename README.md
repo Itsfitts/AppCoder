@@ -44,7 +44,14 @@ Simply describe your app vision, and AppCoder handles the code generation.
 
 * In my testing I saw the best performance using Gemini 2.5 Pro, DeepSeek R1 and Claude Sonnet 4 with or without artifacts enabled. In the Anthropic app, you can itterate on your app idea quickly using HTML in the browser first. Once you're done itterating on your app idea, you can ask Claude to translate the HTML into Android code, then paste that code into AppCoder. Gemini 2.5 Flash can usually generate a working Android app from the Claude code copied in the app description input field. DeepSeek R1 has currently the lowest API cost and sould be the cheapest option for AppCoder. AppCoder currently only allows you to switch to Gemini 2.5 Pro if you need more capable apps but Support for other models like Deepseek R1 is planned.
 
-* If the app is too complex, even the most advanced LLMs will generate unusable code, fail to build, crash on install, or contain major bugs. A bit a trial and error is needed still.
+* If the app is too complex, even the most advanced LLMs will generate unusable code, fail to build, crash on install, or contain major bugs. A bit a trial and error is needed still. To give you an example. I tried the following Prompt first with 2.5 Flash and then with 2.5 Pro:
+> *"Create an app that shows me a list of the latest news from reddit using the r/science subreddit. The app should also contain a filter to filter out topics one doesn't like. The filter stores a list of words and when they appear in the title those news are not displayed. The app checks new entries when opened but keeps already loaded links in cash. Pressing the title of an article in the app loads the reddit article."*
+
+  Even with the 2.5 pro model and many itterations passing back the error the build failed all the time. I therefore switched to a simpler prompt:
+
+> *"Create an app that shows me a list of the latest news from reddit using the r/science subreddit. Just list them on the main screen using the reddit api."*
+
+  And now I only had to do 2 itterations passing build errors back to the LLM to end up with a working app showing me the news in a list.
 
 * The first build takes about 10 minutes. Follow-up builds typically take ~60 seconds on modern phones, from description to installation.
 

@@ -64,12 +64,12 @@ In contrast, no-code tools receive less attention, likely due to LLMs’ current
 
 AppCoder, the focus of this project, targets non-programmers, as coding directly on a phone is not ideal. A desktop IDE is generally more powerful and flexible, but a phone-based IDE offers ease of use. Combined with an LLM that handles the coding, this creates a practical system for quickly building apps on mobile devices.
 
-### 📱 Alternative App Creation Tools for Non-Programmers
+### 📱 Alternative App Creation Tools
 *  **[Kiki.dev former Appacella](https://www.kiki.dev/)** is a commercial non-open source app for coding apps. It has 30 free itterations a month and 5 per day. The model seems less advanced than the gemini 2.5 flash model used in this project. Build time is fast and similar to this project. It uses an additional [Expo Go App](https://play.google.com/store/apps/details?id=host.exp.exponent)** to transfear the build app to your phone.
 *  **[Rork](https://rork.com)** is a commercial non-open source app for coding apps. It has 7 free itterations per day and you will likely need all of them just to build one simple tetris game. The model they use seems less advanced than the gemini 2.5 flash model used in this project. Build time is fast and similar to this project. It uses an additional [Expo Go App](https://play.google.com/store/apps/details?id=host.exp.exponent)** to transfear the build app to your phone.
 
-### 💻 Alternative Full IDEs primarily focused on programmers 
-* Cursor, Windsurf (bought by OpenAI), Github Copiliot (free for students), Cline, Trae, Claude Code, Augment, Roocode, The open source AI code editor, Zed AI, Aider, Lovable, bolt, Firebase Studio, Manus, [Junie](https://jb.gg/try_junie​)
+### 💻 Alternative Full IDEs or Software (mostly focused on programmers) 
+* [Cursor](https://www.cursor.com/), [Windsurf](https://windsurf.com/editor) (bought by OpenAI), [Github Copiliot inside VS](https://github.com/features/copilot) (free for students), [Cline](https://cline.bot/), [Trae](https://www.trae.ai/), [Claude Code](https://www.anthropic.com/claude-code), [Augment Code](https://www.augmentcode.com/), [Roocode](https://github.com/RooCodeInc/Roo-Code), [Void](https://voideditor.com/), [Zed AI](https://zed.dev/ai), [Aider](https://aider.chat/), [Lovable](https://lovable.dev/), [bolt](https://bolt.new/), [Firebase Studio](https://firebase.studio/), [Manus](https://manus.im/guest), [Junie](https://jb.gg/try_junie​), [LocalSite-ai](https://github.com/weise25/LocalSite-ai)
 * YouTuber GosuCoder compared many of them in this [video](https://youtu.be/BAwIbN7Pi2s) showing that performance changes significantly based on which underlying LLM is used.
 
 ---

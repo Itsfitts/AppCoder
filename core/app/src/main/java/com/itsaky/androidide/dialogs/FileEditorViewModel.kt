@@ -14,7 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-class FileEditorViewModel(application: Application) : AndroidViewModel(application) {
+class FileEditorViewModel(application: Application) : AndroidViewModel(application), ViewModelFileEditorBridge {
 
     companion object {
         private const val TAG = "FileEditorViewModel"
@@ -77,48 +77,47 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
             }
         }
 
-    private val bridge: ViewModelFileEditorBridge = object : ViewModelFileEditorBridge {
-        override var currentProjectDirBridge: File?
-            get() = _currentProjectDirVM.value
-            set(value) { _currentProjectDirVM.postValue(value) }
+    // Bridge implementation (ViewModel acts as the bridge)
+    override var currentProjectDirBridge: File?
+        get() = _currentProjectDirVM.value
+        set(value) { _currentProjectDirVM.postValue(value) }
 
-        override val isModifyingExistingProjectBridge: Boolean
-            get() = _isModifyingProject.value ?: false
+    override val isModifyingExistingProjectBridge: Boolean
+        get() = _isModifyingProject.value ?: false
 
-        override fun updateStateBridge(newState: AiWorkflowState) {
-            updateViewModelState(newState)
-        }
+    override fun updateStateBridge(newState: AiWorkflowState) {
+        updateViewModelState(newState)
+    }
 
-        override fun appendToLogBridge(text: String) {
-            appendToViewModelLog(text)
-        }
+    override fun appendToLogBridge(text: String) {
+        appendToViewModelLog(text)
+    }
 
-        override fun displayAiConclusionBridge(conclusion: String?) {
-            _aiConclusion.postValue(conclusion)
-        }
+    override fun displayAiConclusionBridge(conclusion: String?) {
+        _aiConclusion.postValue(conclusion)
+    }
 
-        override fun handleErrorBridge(message: String, e: Exception?) {
-            handleViewModelError(message, e)
-        }
+    override fun handleErrorBridge(message: String, e: Exception?) {
+        handleViewModelError(message, e)
+    }
 
-        override fun runOnUiThreadBridge(block: () -> Unit) {
-            runOnMainThread(block)
-        }
+    override fun runOnUiThreadBridge(block: () -> Unit) {
+        runOnMainThread(block)
+    }
 
-        override fun getContextBridge(): Context {
-            return application.applicationContext
-        }
+    override fun getContextBridge(): Context {
+        return getApplication<Application>().applicationContext
+    }
 
-        override fun onTemplateProjectCreatedBridge(projectDir: File, appName: String, appDescription: String) {
-            runOnMainThread {
-                _currentProjectDirVM.value = projectDir
-                appendToViewModelLog("✅ Base project template created (via bridge): ${projectDir.absolutePath}\n")
-                if (currentApiKeyForWorkflow.isNotBlank()) {
-                    val enhancedPrompt = buildGenerationPrompt(appName, appDescription)
-                    geminiWorkflowCoordinator.startModificationFlow(appName, enhancedPrompt, projectDir)
-                } else {
-                    handleViewModelError("API Key not available when trying to start modification flow after template creation.", null)
-                }
+    override fun onTemplateProjectCreatedBridge(projectDir: File, appName: String, appDescription: String) {
+        runOnMainThread {
+            _currentProjectDirVM.value = projectDir
+            appendToViewModelLog("✅ Base project template created (via bridge): ${projectDir.absolutePath}\n")
+            if (currentApiKeyForWorkflow.isNotBlank()) {
+                val enhancedPrompt = buildGenerationPrompt(appName, appDescription)
+                geminiWorkflowCoordinator.startModificationFlow(appName, enhancedPrompt, projectDir)
+            } else {
+                handleViewModelError("API Key not available when trying to start modification flow after template creation.", null)
             }
         }
     }
@@ -126,28 +125,28 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
     private val geminiHelper: GeminiHelper by lazy {
         GeminiHelper(
             apiKeyProvider = { _storedApiKey },
-            errorHandlerCallback = { message, e -> bridge.handleErrorBridge(message, e) },
-            uiThreadExecutor = { block -> bridge.runOnUiThreadBridge(block) }
+            errorHandlerCallback = { message, e -> handleViewModelError(message, e) },
+            uiThreadExecutor = { block -> runOnMainThread(block) }
         )
     }
 
     private val projectOperationsHandler: ProjectOperationsHandler by lazy {
         ProjectOperationsHandler(
             projectsBaseDir = projectsBaseDir ?: getApplication<Application>().filesDir,
-            directLogAppender = { msg -> bridge.appendToLogBridge(msg) },
-            directErrorHandler = { msg, ex -> bridge.handleErrorBridge(msg, ex) },
-            bridge = bridge
+            directLogAppender = { msg -> appendToLogBridge(msg) },
+            directErrorHandler = { message, e -> handleErrorBridge(message, e) },
+            bridge = this
         )
     }
 
     private val geminiWorkflowCoordinator: GeminiWorkflowCoordinator by lazy {
         GeminiWorkflowCoordinator(
             geminiHelper = geminiHelper,
-            directLogAppender = { msg -> bridge.appendToLogBridge(msg) },
-            directErrorHandler = { msg, ex -> bridge.handleErrorBridge(msg, ex) },
-            bridge = bridge
+            directLogAppender = { msg -> appendToLogBridge(msg) },
+            bridge = this
         )
     }
+
     private var currentApiKeyForWorkflow: String = ""
 
     init {
@@ -184,8 +183,6 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
         _versionsUiVisible.postValue(false)
     }
 
-    fun refreshExistingProjectNames() = loadExistingProjectNames()
-
     fun saveApiKey(apiKey: String) {
         val trimmedApiKey = apiKey.trim()
         prefs.edit().putString(KEY_API_KEY, trimmedApiKey).apply()
@@ -203,8 +200,6 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
             _isModifyingProject.postValue(isModifying)
         }
     }
-
-    fun postUiFeedbackLog(message: String) = appendToViewModelLog(message)
 
     private fun buildGenerationPrompt(appName: String, userDescription: String): String {
         return """
@@ -264,12 +259,12 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
 
                 Log.i(TAG, "Calling overwriteProjectWithVersion. shouldBranch = $shouldBranch")
                 val success = projectOperationsHandler.overwriteProjectWithVersion(appName, versionProjectName, shouldBranch)
-                if(!success) {
+                if (!success) {
                     Log.e(TAG, "overwriteProjectWithVersion failed. Aborting workflow.")
                     return@launch
                 }
 
-            } else if(isRetryPrompt) {
+            } else if (isRetryPrompt) {
                 appendToViewModelLog("Automated Retry: Skipping workbench overwrite.\n")
                 Log.i(TAG, "This is an automated retry, skipping workbench overwrite.")
             } else {
@@ -290,7 +285,7 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
 
             try {
                 val projectDir = File(projectsBaseDir!!, appName)
-                bridge.currentProjectDirBridge = projectDir
+                currentProjectDirBridge = projectDir
                 val isExistingProject = projectOperationsHandler.projectExists(appName)
 
                 if (isExistingProject) {

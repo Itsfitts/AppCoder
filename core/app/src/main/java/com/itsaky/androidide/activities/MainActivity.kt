@@ -5,11 +5,8 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
-import android.os.Environment
-import android.text.TextUtils
 import android.util.Log
 import android.view.View
-import android.widget.ImageButton // Import ImageButton if using it
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.ActivityResultLauncher
@@ -25,7 +22,8 @@ import com.google.android.material.transition.MaterialSharedAxis
 import com.itsaky.androidide.R
 import com.itsaky.androidide.activities.editor.EditorActivityKt
 import com.itsaky.androidide.app.EdgeToEdgeIDEActivity
-import com.itsaky.androidide.databinding.ActivityMainBinding // Your ViewBinding class
+import com.itsaky.androidide.databinding.ActivityMainBinding
+import com.itsaky.androidide.dialogs.AutoFixStateManager
 import com.itsaky.androidide.dialogs.FileEditorActivity
 import com.itsaky.androidide.preferences.internal.GeneralPreferences
 import com.itsaky.androidide.projects.IProjectManager
@@ -68,28 +66,49 @@ class MainActivity : EdgeToEdgeIDEActivity() {
 
         fileEditorResultLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             Log.d(TAG, "FileEditorActivity result received. ResultCode: ${result.resultCode}")
+
             if (result.resultCode == Activity.RESULT_OK) {
-                val projectPath = result.data?.getStringExtra(FileEditorActivity.RESULT_EXTRA_PROJECT_PATH)
+                val data = result.data
+                if (data == null) {
+                    Log.e(TAG, "FileEditorActivity returned OK but the result Intent was null.")
+                    Toast.makeText(this, "Error: Received an empty result.", Toast.LENGTH_SHORT).show()
+                    return@registerForActivityResult
+                }
+
+                val projectPath = data.getStringExtra(FileEditorActivity.RESULT_EXTRA_PROJECT_PATH)
+                val wasAutoFixEnabled = data.getBooleanExtra(FileEditorActivity.EXTRA_ENABLE_AUTO_FIX, false)
+                // val initialDescription = data.getStringExtra(FileEditorActivity.EXTRA_INITIAL_APP_DESCRIPTION_FOR_AUTO_FIX) // Warning fixed: This was never used.
+
                 if (projectPath != null) {
-                    Log.i(TAG, "FileEditorActivity finished successfully. Project path: $projectPath")
-                    Toast.makeText(this, "Project '${File(projectPath).name}' is ready. Opening...", Toast.LENGTH_LONG).show()
-                    openProject(File(projectPath))
+                    Log.i(TAG, "FileEditorActivity finished successfully. Project path: $projectPath, Auto-Fix was Active: $wasAutoFixEnabled")
+
+                    if (wasAutoFixEnabled && AutoFixStateManager.isAutoFixModeGloballyActive) {
+                        Toast.makeText(this, "AI finished. Starting build for '${File(projectPath).name}'...", Toast.LENGTH_LONG).show()
+                        openAndBuildProject(File(projectPath))
+                    } else {
+                        Toast.makeText(this, "Project '${File(projectPath).name}' is ready. Opening...", Toast.LENGTH_LONG).show()
+                        openProject(File(projectPath))
+                    }
                 } else {
                     Log.w(TAG, "FileEditorActivity returned OK but project path was null.")
+                    if (wasAutoFixEnabled) {
+                        AutoFixStateManager.disableAutoFixMode()
+                        Toast.makeText(this, "Auto-fix cycle stopped: Project path was lost.", Toast.LENGTH_LONG).show()
+                    }
                 }
             } else {
-                Log.i(TAG, "FileEditorActivity was cancelled or returned an error. Result code: ${result.resultCode}")
+                Log.i(TAG, "FileEditorActivity was cancelled or returned an error. Disabling auto-fix if it was active.")
+                AutoFixStateManager.disableAutoFixMode()
             }
         }
 
         setupViewModelObservers()
         setupNavigation()
-        setupLaunchAiEditorButton() // Renamed from setupFab
+        setupLaunchAiEditorButton()
         openLastProject()
     }
 
     override fun bindLayout(): View {
-        Log.d(TAG, "bindLayout() called - Inflating view.")
         _binding = ActivityMainBinding.inflate(layoutInflater)
         return binding.root
     }
@@ -97,7 +116,6 @@ class MainActivity : EdgeToEdgeIDEActivity() {
     private fun setupViewModelObservers() {
         viewModel.currentScreen.observe(this) { screen ->
             if (screen == -1) return@observe
-            Log.d(TAG, "Current screen observed: $screen")
             onScreenChanged(screen)
             onBackPressedCallback.isEnabled = screen != MainViewModel.SCREEN_MAIN
         }
@@ -113,11 +131,8 @@ class MainActivity : EdgeToEdgeIDEActivity() {
         onBackPressedDispatcher.addCallback(this, onBackPressedCallback)
     }
 
-    // Renamed from setupFab
     private fun setupLaunchAiEditorButton() {
-        // Use the ID of your new ImageButton from activity_main.xml
         binding.buttonLaunchAiEditor.setOnClickListener {
-            Log.d(TAG, "Launch AI Editor button clicked.")
             launchFileEditorActivity()
         }
     }
@@ -163,7 +178,7 @@ class MainActivity : EdgeToEdgeIDEActivity() {
     private fun tryOpenLastProject() {
         if (!GeneralPreferences.autoOpenProjects) return
         val openedProject = GeneralPreferences.lastOpenedProject
-        if (GeneralPreferences.NO_OPENED_PROJECT == openedProject || TextUtils.isEmpty(openedProject)) return
+        if (GeneralPreferences.NO_OPENED_PROJECT == openedProject || openedProject.isNullOrEmpty()) return
 
         val project = File(openedProject)
         if (!project.exists() || !project.isDirectory) {
@@ -188,10 +203,21 @@ class MainActivity : EdgeToEdgeIDEActivity() {
             .show()
     }
 
+    // ERROR FIXED: Changed from 'private' to 'internal' so fragments can access it.
     internal fun openProject(root: File) {
         IProjectManager.getInstance().openProject(root)
         GeneralPreferences.lastOpenedProject = root.absolutePath
         startActivity(Intent(this, EditorActivityKt::class.java))
+    }
+
+    // ERROR FIXED: Changed from 'private' to 'internal'
+    internal fun openAndBuildProject(root: File) {
+        IProjectManager.getInstance().openProject(root)
+        GeneralPreferences.lastOpenedProject = root.absolutePath
+        val intent = Intent(this, EditorActivityKt::class.java).apply {
+            putExtra(EditorActivityKt.EXTRA_AUTO_BUILD_PROJECT, true)
+        }
+        startActivity(intent)
     }
 
     private fun checkAndRequestStoragePermission(): Boolean {
@@ -254,6 +280,5 @@ class MainActivity : EdgeToEdgeIDEActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
-        // REQUEST_CODE_FILE_EDITOR is not strictly needed if only using ActivityResultLauncher
     }
 }

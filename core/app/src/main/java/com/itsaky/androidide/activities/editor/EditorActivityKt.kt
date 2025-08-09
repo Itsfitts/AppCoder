@@ -20,6 +20,16 @@ package com.itsaky.androidide.activities.editor
 /**
  * @author Akash Yadav
  */
-class EditorActivityKt : EditorHandlerActivity()
+class EditorActivityKt : EditorHandlerActivity() {
+
+    companion object {
+        /**
+         * A boolean extra used by MainActivity to instruct this activity
+         * to automatically trigger a build as soon as the project is initialized.
+         * The logic to handle this extra is in the parent class, EditorHandlerActivity.
+         */
+        const val EXTRA_AUTO_BUILD_PROJECT = "com.itsaky.androidide.AUTO_BUILD_PROJECT"
+    }
+}
 
 // TODO: Should we adjust to the display cutout insets?

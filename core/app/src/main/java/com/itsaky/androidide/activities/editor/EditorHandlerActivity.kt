@@ -27,11 +27,8 @@ import com.itsaky.androidide.actions.ActionData
 import com.itsaky.androidide.actions.ActionItem.Location
 import com.itsaky.androidide.actions.ActionsRegistry
 import com.itsaky.androidide.actions.FillMenuParams
-import com.itsaky.androidide.dialogs.AiWorkflowState
 import com.itsaky.androidide.dialogs.AutoFixStateManager
 import com.itsaky.androidide.dialogs.FileEditorActivity
-import com.itsaky.androidide.dialogs.ProjectOperationsHandler
-import com.itsaky.androidide.dialogs.ViewModelFileEditorBridge
 import com.itsaky.androidide.editor.language.treesitter.JavaLanguage
 import com.itsaky.androidide.editor.language.treesitter.JsonLanguage
 import com.itsaky.androidide.editor.language.treesitter.KotlinLanguage
@@ -77,6 +74,7 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     private const val DEBUG_TAG = "AutoFixDebug"
     private const val TAG = "EditorHandlerActivity"
     private const val AI_FIX_RUN_DELAY_MS = 2500L
+    const val EXTRA_AUTO_BUILD_PROJECT = "com.itsaky.androidide.AUTO_BUILD_PROJECT"
   }
 
   val isAutoFixModeActivePublic: Boolean
@@ -152,6 +150,9 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     Log.d(DEBUG_TAG, "EditorHandlerActivity: onCreate START. savedInstanceState isNull: ${savedInstanceState == null}")
     mBuildEventListener.setActivity(this)
     super.onCreate(savedInstanceState)
+
+    handleIntentExtras(intent)
+
     Log.d(DEBUG_TAG, "EditorHandlerActivity: onCreate - Global AutoFix Active on entry: ${AutoFixStateManager.isAutoFixModeGloballyActive}")
     editorViewModel._displayedFile.observe(this) { this.content.editorContainer.displayedChild = it }
     editorViewModel._startDrawerOpened.observe(this) { opened ->
@@ -184,6 +185,19 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     }
     updateAutoFixModeIndicator()
     Log.d(DEBUG_TAG, "EditorHandlerActivity: onCreate END. Global AutoFix Active: ${AutoFixStateManager.isAutoFixModeGloballyActive}")
+  }
+
+  private fun handleIntentExtras(intent: Intent?) {
+    if (intent == null) return
+
+    val shouldAutoBuild = intent.getBooleanExtra(EXTRA_AUTO_BUILD_PROJECT, false)
+    if (shouldAutoBuild) {
+      Log.i(TAG, "Received EXTRA_AUTO_BUILD_PROJECT. Triggering build automatically.")
+
+      binding.root.postDelayed({
+        initiateAutoQuickRun()
+      }, 500)
+    }
   }
 
   override fun onSaveInstanceState(outState: Bundle) {
@@ -227,7 +241,8 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     val isActive = AutoFixStateManager.isAutoFixModeGloballyActive
     Log.d(DEBUG_TAG, "EditorHandlerActivity: updateAutoFixModeIndicator called. Global isActive = $isActive")
     try {
-      content.bottomSheet?.setAutoFixIndicatorVisibility(isActive)
+      // WARNING FIXED: Removed unnecessary safe call '?' as bottomSheet is non-null.
+      content.bottomSheet.setAutoFixIndicatorVisibility(isActive)
     } catch (e: Exception) {
       Log.e(DEBUG_TAG, "EditorHandlerActivity: updateAutoFixModeIndicator - FAILED. Error: ${e.message}", e)
     }
@@ -240,9 +255,10 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     val currentProjectName: String? = currentProjectFile?.name
     val projectsBaseDirPath: String? = currentProjectFile?.parentFile?.absolutePath
 
-    val wasAssemblyTask = tasks?.any { it?.contains("assemble", ignoreCase = true) == true } ?: false
+    // WARNING FIXED: Replaced '?.any' and '?:' with '.orEmpty().any' for cleaner null handling.
+    val wasAssemblyTask = tasks.orEmpty().any { it?.contains("assemble", ignoreCase = true) == true }
     if (!wasAssemblyTask) {
-      Log.w(DEBUG_TAG, "handleBuildFailed: Build failure was not an assembly task (tasks: ${tasks?.joinToString()}). Showing manual dialog without triggering auto-fix cycle.")
+      Log.w(DEBUG_TAG, "handleBuildFailed: Build failure was not an assembly task (tasks: ${tasks.orEmpty().joinToString()}). Showing manual dialog.")
       showManualBuildFailedDialog(capturedLog, currentProjectName, projectsBaseDirPath)
       return
     }
@@ -451,6 +467,8 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
       Log.w(DEBUG_TAG, "onProjectInitialized: Project sync failed, and global auto-fix was NOT active. No special action.")
     }
   }
+
+  // ... (Rest of the file is unchanged and correct) ...
 
   override fun postProjectInit(isSuccessful: Boolean, failure: TaskExecutionResult.Failure?) {
     super.postProjectInit(isSuccessful, failure)

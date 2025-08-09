@@ -559,4 +559,8 @@
   <string name="summary_open_source_licenses">View open source licenses.</string>
   <string name="idepref_jdkVersion_title">JDK version</string>
   <string name="idepref_jdkVersion_summary">Currently selected: %1$s (requires restart if changed)</string>
+  <string name="msg_open_file_browser">Open file browser</string>
+  <string name="msg_open_existing_projects">Open existing projects</string>
+  <string name="title_existing_projects">Existing projects</string>
+  <string name="msg_no_existing_projects">No projects found in your AndroidIDE projects folder.</string>
 </resources>

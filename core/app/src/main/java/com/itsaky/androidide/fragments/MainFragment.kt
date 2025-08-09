@@ -34,20 +34,19 @@ import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.lib.ProgressMonitor
 import org.slf4j.LoggerFactory
 import java.io.File
-import java.util.concurrent.CancellationException
 
 class MainFragment : BaseFragment() {
 
-  private val viewModel by viewModels<MainViewModel>(
-    ownerProducer = { requireActivity() })
+  private val viewModel by viewModels<MainViewModel>(ownerProducer = { requireActivity() })
   private var binding: FragmentMainBinding? = null
 
   companion object {
-
     private val log = LoggerFactory.getLogger(MainFragment::class.java)
   }
 
-  override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?,
+  override fun onCreateView(
+    inflater: LayoutInflater,
+    container: ViewGroup?,
     savedInstanceState: Bundle?
   ): View {
     binding = FragmentMainBinding.inflate(inflater, container, false)
@@ -61,11 +60,12 @@ class MainFragment : BaseFragment() {
       val onClick = { action: MainScreenAction, _: View ->
         when (action.id) {
           MainScreenAction.ACTION_CREATE_PROJECT -> showCreateProject()
-          MainScreenAction.ACTION_OPEN_PROJECT -> pickDirectory()
+          MainScreenAction.ACTION_OPEN_PROJECT -> pickDirectory() // labeled "Open file browser"
+          MainScreenAction.ACTION_OPEN_EXISTING_PROJECTS -> showExistingProjectsList() // NEW
           MainScreenAction.ACTION_CLONE_REPO -> cloneGitRepo()
           MainScreenAction.ACTION_OPEN_TERMINAL -> startActivity(
-            Intent(requireActivity(), TerminalActivity::class.java))
-
+            Intent(requireActivity(), TerminalActivity::class.java)
+          )
           MainScreenAction.ACTION_PREFERENCES -> gotoPreferences()
           MainScreenAction.ACTION_DONATE -> BaseApplication.getBaseInstance().openDonationsPage()
           MainScreenAction.ACTION_DOCS -> BaseApplication.getBaseInstance().openDocs()
@@ -151,7 +151,7 @@ class MainFragment : BaseFragment() {
     val progress = GitCloneProgressMonitor(binding.progress, binding.message)
     val coroutineScope = (activity as? BaseIDEActivity?)?.activityScope ?: viewLifecycleScope
 
-    var getDialog: Function0<AlertDialog?>? = null
+    var getDialog: (() -> AlertDialog?)? = null
 
     val cloneJob = coroutineScope.launch(Dispatchers.IO) {
 
@@ -188,7 +188,7 @@ class MainFragment : BaseFragment() {
     builder.setPositiveButton(android.R.string.cancel) { iface, _ ->
       iface.dismiss()
       progress.cancel()
-      cloneJob.cancel(CancellationException("Cancelled by user"))
+      cloneJob.cancel()
     }
 
     val dialog = builder.show()
@@ -212,8 +212,78 @@ class MainFragment : BaseFragment() {
     startActivity(Intent(requireActivity(), PreferencesActivity::class.java))
   }
 
+  /**
+   * Collect possible project roots to be resilient to path differences and typos.
+   * - Environment.PROJECTS_DIR (the canonical one used by clone)
+   * - External app files dir + AndroidIDEProjects (and the common 'l' vs 'I' typo)
+   * - Internal files dir + home/AndroidIDEProjects
+   */
+  private fun resolveProjectRoots(): List<File> {
+    val roots = mutableListOf<File>()
+
+    // 1) The canonical dir used elsewhere in the app
+    try {
+      Environment.PROJECTS_DIR.canonicalFile.let { roots += it }
+    } catch (_: Throwable) { /* ignore */ }
+
+    // 2) External app-specific storage
+    requireContext().getExternalFilesDir(null)?.let { ext ->
+      val base = ext.canonicalFile
+      roots += File(base, "AndroidIDEProjects")
+      // Workaround common I/l confusion
+      roots += File(base, "AndroidlDEProjects")
+    }
+
+    // 3) Internal app files (some builds keep projects under $filesDir/home)
+    val homeIde = File(requireContext().filesDir, "home/AndroidIDEProjects")
+    roots += homeIde
+
+    // Deduplicate and keep only existing directories
+    return roots
+      .mapNotNull { runCatching { it.canonicalFile }.getOrNull() }
+      .distinctBy { it.absolutePath }
+      .filter { it.exists() && it.isDirectory }
+  }
+
+  private fun showExistingProjectsList() {
+    val roots = resolveProjectRoots()
+
+    // Gather project dirs across all roots
+    val projectDirs = roots.flatMap { root ->
+      root.listFiles()?.filter { it.isDirectory } ?: emptyList()
+    }.mapNotNull { runCatching { it.canonicalFile }.getOrNull() }
+      .distinctBy { it.absolutePath }
+      .sortedBy { it.name.lowercase() }
+
+    if (projectDirs.isEmpty()) {
+      // Show a helpful debug so we know what was scanned
+      val scanned = if (roots.isEmpty()) "(no valid roots found)"
+      else roots.joinToString("\n") { "• ${it.absolutePath}" }
+
+      val builder = DialogUtils.newMaterialDialogBuilder(requireContext())
+      builder.setTitle(string.title_existing_projects)
+      builder.setMessage("No projects found.\nScanned:\n$scanned")
+      builder.setPositiveButton(android.R.string.ok, null)
+      builder.show()
+
+      log.info("Existing projects scan: no projects. Roots scanned:\n$scanned")
+      return
+    }
+
+    val names = projectDirs.map { it.name }.toTypedArray()
+    val builder = DialogUtils.newMaterialDialogBuilder(requireContext())
+    builder.setTitle(string.title_existing_projects)
+    builder.setItems(names) { dialog, which ->
+      dialog.dismiss()
+      openProject(projectDirs[which])
+    }
+    builder.setNegativeButton(android.R.string.cancel, null)
+    builder.show()
+  }
+
   // TODO(itsaky) : Improve this implementation
-  class GitCloneProgressMonitor(val progress: LinearProgressIndicator,
+  class GitCloneProgressMonitor(
+    val progress: LinearProgressIndicator,
     val message: TextView
   ) : ProgressMonitor {
 

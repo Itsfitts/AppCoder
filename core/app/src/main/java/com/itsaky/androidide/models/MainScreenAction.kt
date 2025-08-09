@@ -47,6 +47,7 @@ constructor(
     const val ACTION_PREFERENCES = 4
     const val ACTION_DONATE = 5
     const val ACTION_DOCS = 6
+    const val ACTION_OPEN_EXISTING_PROJECTS = 7
 
     /**
      * Get all main screen actions.
@@ -57,27 +58,40 @@ constructor(
         val createProject = MainScreenAction(
           ACTION_CREATE_PROJECT,
           R.string.create_project,
-          R.drawable.ic_add)
+          R.drawable.ic_add
+        )
 
+        // Renamed: this is the system file picker
         val openProject = MainScreenAction(
           ACTION_OPEN_PROJECT,
-          R.string.msg_open_existing_project,
-          R.drawable.ic_folder)
+          R.string.msg_open_file_browser, // renamed label
+          R.drawable.ic_folder
+        )
+
+        // New: lists projects under Environment.PROJECTS_DIR
+        val openExistingProjects = MainScreenAction(
+          ACTION_OPEN_EXISTING_PROJECTS,
+          R.string.msg_open_existing_projects, // correct label
+          R.drawable.ic_folder
+        )
 
         val cloneGitRepository = MainScreenAction(
           ACTION_CLONE_REPO,
           R.string.git_clone_repo,
-          R.drawable.ic_git)
+          R.drawable.ic_git
+        )
 
         val openTerminal = MainScreenAction(
           ACTION_OPEN_TERMINAL,
           R.string.title_terminal,
-          R.drawable.ic_terminal)
+          R.drawable.ic_terminal
+        )
 
         val preferences = MainScreenAction(
           ACTION_PREFERENCES,
           R.string.msg_preferences,
-          R.drawable.ic_settings)
+          R.drawable.ic_settings
+        )
 
         val donate = MainScreenAction(
           ACTION_DONATE,
@@ -88,11 +102,14 @@ constructor(
         val docs = MainScreenAction(
           ACTION_DOCS,
           R.string.btn_docs,
-          R.drawable.ic_docs)
+          R.drawable.ic_docs
+        )
 
-        Collections.addAll(this,
+        Collections.addAll(
+          this,
           createProject,
-          openProject,
+          openProject,            // Open file browser
+          openExistingProjects,   // Open existing projects (list)
           cloneGitRepository,
           openTerminal,
           preferences,

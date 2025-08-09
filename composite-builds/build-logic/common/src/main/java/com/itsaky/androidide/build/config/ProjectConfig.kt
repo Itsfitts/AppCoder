@@ -71,12 +71,17 @@ val Project.simpleVersionName: String
     }
 
     if (simpleVersion == null) {
-      if (CI.isTestEnv) {
-        return "1.0.0-beta"
+      // THIS IS THE FIX:
+      // If tag parsing fails, check if we are on a CI server.
+      // If we are NOT on a CI server, it's a local build, so we
+      // can safely return a default version and not crash.
+      if (!CI.isCiBuild) {
+        return "1.0.0-LOCAL-DEV"
       }
 
+      // If we ARE on a CI server, then a valid tag is required, so we crash.
       throw IllegalStateException(
-        "Cannot extract simple version name. Invalid version string '$version'. Version names must be SEMVER with 'v' prefix"
+        "Cannot extract simple version name. Invalid version string '$version'. This is a required for CI builds."
       )
     }
 

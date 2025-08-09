@@ -61,11 +61,11 @@ Simply describe your app vision, and AppCoder handles the code generation.
 
 The space of programming helpers that use LLMs is relatively new and rapidly becoming crowded, as LLMs and programming are a natural match. The performance of LLMs on programming and math tasks is expected to improve significantly, with some experts predicting that all coding tasks will eventually be handled by LLMs. The main reason for that is that code can be automatically generated and checked which results in lots of synthetic data available for training these LLMs.
 
-The most well-known tools are IDEs with advanced LLM and agent integrations, designed to help both professional and beginner programmers generate better code more efficiently.
+The most well-known tools are IDEs with advanced LLM and agent integrations, designed to help both professional and beginner programmers generate better code more efficiently. Cursor and Copilote might be the most prominent examples with many more being available. This project is similar to that idea with the difference of running on the phone, being focused on Android alone and being completly free and open source. 
 
-In contrast, no-code tools receive less attention, likely due to LLMs’ current limitations in common sense reasoning, which still requires human oversight. Currently, LLMs perform best at low-level tasks but are increasingly capable of implementing entire features. Non-programmers, who can manage higher-level design and testing, are becoming more effective collaborators for guiding these more capable LLMs. As LLMs continue to improve, a growing share of apps will be developed by non-programmers.
+In contrast programming helpers, no-code tools receive less attention, likely due to LLMs’ current limitations in common sense reasoning, which still requires human oversight. Currently, LLMs perform best at low-level tasks but are increasingly capable of implementing entire features. Non-programmers, who can manage higher-level design and testing, are becoming more effective collaborators for guiding these more capable LLMs. As LLMs continue to improve, a growing share of apps will be developed by non-programmers.
 
-The focus of the Appcoder project is to targets these non-programmers. Coding directly on a phone is not ideal when direct in line code modification is required so professional developers will likely use a standard IDE instead. A desktop IDE is generally more powerful and flexible, but a phone-based IDE offers ease of use and combined with an LLM that handles the coding, quickly building apps on mobile devices becomes possible.
+The focus of the AppCoder project is to targets these non-programmers. Coding directly on a phone is not ideal when direct in line code modification is required so professional developers will likely use a standard IDE instead. A desktop IDE is generally more powerful and flexible, but a phone-based IDE offers ease of use and combined with an LLM that handles the coding, quickly building apps on mobile devices becomes possible.
 
 ### 📱 Alternative App Creation Tools
 *  **[Kiki.dev former Appacella](https://www.kiki.dev/)** is a commercial non-open source app for coding apps. It has 30 free itterations a month and 5 per day. The model seems less advanced than the gemini 2.5 flash model used in this project. Build time is fast and similar to this project. It uses an additional [Expo Go App](https://play.google.com/store/apps/details?id=host.exp.exponent)** to transfear the build app to your phone.
@@ -73,7 +73,6 @@ The focus of the Appcoder project is to targets these non-programmers. Coding di
 
 ### 💻 Alternative Full IDEs or Software (mostly focused on programmers) 
 * [Cursor](https://www.cursor.com/), [Windsurf](https://windsurf.com/editor) (bought by OpenAI), [Github Copiliot inside VS](https://github.com/features/copilot) (free for students), [Cline](https://cline.bot/), [Trae](https://www.trae.ai/), [Claude Code](https://www.anthropic.com/claude-code), [Augment Code](https://www.augmentcode.com/), [Roocode](https://github.com/RooCodeInc/Roo-Code), [Void](https://voideditor.com/), [Zed AI](https://zed.dev/ai), [Aider](https://aider.chat/), [Lovable](https://lovable.dev/), [bolt](https://bolt.new/), [Firebase Studio](https://firebase.studio/), [Manus](https://manus.im/guest), [Junie](https://jb.gg/try_junie​), [LocalSite-ai](https://github.com/weise25/LocalSite-ai)
-* YouTuber GosuCoder compared many of them in this [video](https://youtu.be/BAwIbN7Pi2s) showing that performance changes significantly based on which underlying LLM is used.
 
 ---
 
@@ -81,7 +80,9 @@ The focus of the Appcoder project is to targets these non-programmers. Coding di
 
 This section is for those who want to compile AppCoder from its source code. **If you just downloaded the APK, you can skip this.**
 
-This might be interested for you if you want to implement your own LLM API calls or if you want to implement advanced LLM Agent features to improve the code generation like automated testing and such features.
+Unfortenatly a documentation is not available currently since to much is still changing. Here are some tips which I believe help in getting started if you realy need to look into the code.
+
+This might be interesting for you if you want to implement your own LLM API calls or if you want to implement advanced LLM agent features to improve the code generation like automated testing and such features.
 
 1.  **Clone this repository.**
 2.  **Connect your Android smartphone** to your computer.
@@ -91,7 +92,7 @@ This might be interested for you if you want to implement your own LLM API calls
 5.  **Troubleshooting Builds from Source:**
     *   **Gradle build fails in Android Studio:** Try running the build process again.
     *   **Build of the *generated app* (by AppCoder) on the phone fails (during its terminal run):** Uninstall the partially built app and restart the build process within AppCoder.
-6. You find the LLM related Code under AppCoder\core\app\src\main\java\com\itsaky\androidide\dialogs the rest of the app is basically the original AndroidIDE code only modefied in a few areas for example getting it streamlined to better work for LLM based development.
+6. You find the LLM related code under AppCoder\core\app\src\main\java\com\itsaky\androidide\dialogs. Also the package com.itsaky.androidide.activities.editor has modeficatons. The rest of the app is basically the original AndroidIDE code only modefied in a few areas for example getting it streamlined to better work for LLM based development.
 
 ---
 

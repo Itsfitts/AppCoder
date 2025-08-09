@@ -210,6 +210,37 @@ class GeminiHelper(
         }
     }
 
+    /**
+     * Recursively traverses a JSON object or array and removes any key named "additionalProperties".
+     * This is necessary because the Gemini API does not support this field in its schema definition.
+     */
+    private fun removeUnsupportedKeys(json: Any): Any {
+        when (json) {
+            is JSONObject -> {
+                val keysToRemove = mutableListOf<String>()
+                val iterator = json.keys()
+                while (iterator.hasNext()) {
+                    val key = iterator.next()
+                    if (key == "additionalProperties") {
+                        keysToRemove.add(key)
+                    } else {
+                        // Recursively clean sub-objects/arrays
+                        removeUnsupportedKeys(json.get(key))
+                    }
+                }
+                for (key in keysToRemove) {
+                    json.remove(key)
+                }
+            }
+            is JSONArray -> {
+                for (i in 0 until json.length()) {
+                    removeUnsupportedKeys(json.get(i))
+                }
+            }
+        }
+        return json
+    }
+
     private fun buildOpenAiRequest(
         modelId: String,
         geminiContents: List<JSONObject>,
@@ -244,14 +275,11 @@ class GeminiHelper(
         if (!responseSchemaJson.isNullOrBlank()) {
             if (supportsJsonSchemaFormat) {
                 Log.d(RAW_LOG_TAG, "Using 'json_schema' response_format for model: $modelId")
-                // >>>>> CORE FIX IS HERE <<<<<
-                // The API expects the structure: { "type": "json_schema", "json_schema": { "name": "...", "strict": true, "schema": { ... } } }
                 body.put("response_format", JSONObject().apply {
                     put("type", "json_schema")
                     put("json_schema", JSONObject().apply {
                         put("name", "android_ide_schema")
                         put("strict", true)
-                        // This was the missing key. The actual schema object must be nested under a "schema" key.
                         put("schema", JSONObject(responseSchemaJson))
                     })
                 })
@@ -277,8 +305,16 @@ class GeminiHelper(
             put("topK", 40)
             if (!responseSchemaJson.isNullOrBlank()) {
                 put("response_mime_type", responseMimeTypeOverride ?: "application/json")
-                try { put("response_schema", JSONObject(responseSchemaJson)) }
-                catch (e: JSONException) { errorHandlerCallback("Invalid response_schema JSON: ${e.message}", e); return null }
+                try {
+                    // Create a mutable JSONObject from the schema string.
+                    val originalSchema = JSONObject(responseSchemaJson)
+                    // Clean the schema by removing keys that Gemini does not support.
+                    val cleanedSchema = removeUnsupportedKeys(originalSchema) as JSONObject
+                    put("response_schema", cleanedSchema)
+                } catch (e: JSONException) {
+                    errorHandlerCallback("Invalid response_schema JSON: ${e.message}", e)
+                    return null
+                }
             }
         }
         if (effectiveModelIdentifier.startsWith("gemini-2.5")) {

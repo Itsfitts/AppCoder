@@ -32,6 +32,6 @@ interface ViewModelFileEditorBridge {
     fun getContextBridge(): Context // For SharedPreferences or other context needs in helpers
     fun onTemplateProjectCreatedBridge(projectDir: File, appName: String, appDescription: String) // Callback for template creation
 
-    // NEW: Trigger your existing build/install (and optionally run) pipeline.
-    fun triggerBuildBridge(projectDir: File, runAfterBuild: Boolean)
+    // Trigger build/install (and optionally run). Default no-op so old implementers don't break.
+    fun triggerBuildBridge(projectDir: File, runAfterBuild: Boolean) { /* no-op */ }
 }

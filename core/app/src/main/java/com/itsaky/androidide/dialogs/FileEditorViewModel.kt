@@ -2,7 +2,6 @@ package com.itsaky.androidide.dialogs
 
 import android.app.Application
 import android.content.Context
-import android.content.SharedPreferences
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
@@ -23,8 +22,7 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
         private const val KEY_GEMINI_MODEL = "gemini_selected_model_vm"
     }
 
-    private val prefs: SharedPreferences =
-        application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val prefs = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private val _workflowState = MutableLiveData(AiWorkflowState.IDLE)
     val workflowState: LiveData<AiWorkflowState> = _workflowState
@@ -115,9 +113,43 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
             appendToViewModelLog("✅ Base project template created (via bridge): ${projectDir.absolutePath}\n")
             if (currentApiKeyForWorkflow.isNotBlank()) {
                 val enhancedPrompt = buildGenerationPrompt(appName, appDescription)
-                geminiWorkflowCoordinator.startModificationFlow(appName, enhancedPrompt, projectDir)
+                // Start AI flow with auto-build + auto-run flags
+                geminiWorkflowCoordinator.startModificationFlow(
+                    appName = appName,
+                    appDescription = enhancedPrompt,
+                    projectDir = projectDir,
+                    autoBuild = true,
+                    autoRun = true
+                )
             } else {
                 handleViewModelError("API Key not available when trying to start modification flow after template creation.", null)
+            }
+        }
+    }
+
+    // NEW: implement the build trigger so the workflow can auto-continue after AI conclusion
+    override fun triggerBuildBridge(projectDir: File, runAfterBuild: Boolean) {
+        runOnMainThread {
+            try {
+                // Open project and start Editor with auto-build.
+                com.itsaky.androidide.projects.IProjectManager.getInstance().openProject(projectDir)
+                com.itsaky.androidide.preferences.internal.GeneralPreferences.lastOpenedProject = projectDir.absolutePath
+
+                val appCtx = getApplication<Application>().applicationContext
+                val intent = android.content.Intent(
+                    appCtx,
+                    com.itsaky.androidide.activities.editor.EditorActivityKt::class.java
+                ).apply {
+                    putExtra(com.itsaky.androidide.activities.editor.EditorActivityKt.EXTRA_AUTO_BUILD_PROJECT, true)
+                    // If EditorActivity supports an extra to auto-run after build, pass it here.
+                    // Otherwise, it will respect user preference (idepref_launchAppAfterInstall).
+                    // putExtra(EditorActivityKt.EXTRA_AUTO_RUN_AFTER_BUILD, runAfterBuild)
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                appCtx.startActivity(intent)
+                appendToViewModelLog("🚀 Auto-build started for '${projectDir.name}'.\n")
+            } catch (e: Exception) {
+                handleViewModelError("Failed to trigger build: ${e.message}", e)
             }
         }
     }
@@ -203,12 +235,12 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
 
     private fun buildGenerationPrompt(appName: String, userDescription: String): String {
         return """
-            **AI GOAL: Full Android App Implementation**
-            You are an expert Android developer... Your task is to generate all the necessary code for a new Android application based on the user's request.
-            ... (rest of the detailed prompt)
-            **App Name:** "$appName"
-            **App Description:** "$userDescription"
-        """.trimIndent()
+        **AI GOAL: Full Android App Implementation**
+        You are an expert Android developer... Your task is to generate all the necessary code for a new Android application based on the user's request.
+        ... (rest of the detailed prompt)
+        **App Name:** "$appName"
+        **App Description:** "$userDescription"
+    """.trimIndent()
     }
 
     fun initiateWorkflow(appName: String, appDescription: String, apiKey: String, selectedModelId: String, selectedVersion: String?) {
@@ -290,7 +322,13 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
 
                 if (isExistingProject) {
                     Log.d(TAG, "Project exists. Starting modification flow...")
-                    geminiWorkflowCoordinator.startModificationFlow(appName, finalPrompt, projectDir)
+                    geminiWorkflowCoordinator.startModificationFlow(
+                        appName = appName,
+                        appDescription = finalPrompt,
+                        projectDir = projectDir,
+                        autoBuild = true,
+                        autoRun = true
+                    )
                 } else {
                     Log.d(TAG, "Project does not exist. Starting new project template creation...")
                     updateViewModelState(AiWorkflowState.CREATING_PROJECT_TEMPLATE)

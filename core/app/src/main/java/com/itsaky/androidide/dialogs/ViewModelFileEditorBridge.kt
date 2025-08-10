@@ -31,4 +31,7 @@ interface ViewModelFileEditorBridge {
     fun runOnUiThreadBridge(block: () -> Unit) // ViewModel will handle thread switching
     fun getContextBridge(): Context // For SharedPreferences or other context needs in helpers
     fun onTemplateProjectCreatedBridge(projectDir: File, appName: String, appDescription: String) // Callback for template creation
+
+    // NEW: Trigger your existing build/install (and optionally run) pipeline.
+    fun triggerBuildBridge(projectDir: File, runAfterBuild: Boolean)
 }

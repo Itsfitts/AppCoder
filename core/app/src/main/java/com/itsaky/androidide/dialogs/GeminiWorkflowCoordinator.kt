@@ -28,22 +28,42 @@ class GeminiWorkflowCoordinator(
     private var lastAppNameForFallback: String = ""
     private var lastFileContextForFallback: String = ""
 
+    // New: guardrails for auto-build
+    private var autoBuildAfterApply = false
+    private var autoRunAfterBuild = false
+    private var hasTriggeredAutoBuild = false
+    private var encounteredError = false
+    private var anyChangesApplied = false
+
     private fun logViaBridge(message: String) = bridge.appendToLogBridge(message)
 
-    // Optional auto-downgrade: if user picks gpt-5, use gpt-5-mini for structured steps
     private fun modelForStructuredSteps(): String? {
         val current = geminiHelper.currentModelIdentifier
         return if (current.equals("gpt-5", ignoreCase = true)) "gpt-5-mini" else null
     }
 
-    fun startModificationFlow(appName: String, appDescription: String, projectDir: File) {
-        val provider = if (geminiHelper.currentModelIdentifier.startsWith("gpt-", ignoreCase = true)) "OpenAI" else "Gemini"
+    fun startModificationFlow(
+        appName: String,
+        appDescription: String,
+        projectDir: File,
+        autoBuild: Boolean = false,
+        autoRun: Boolean = false
+    ) {
+        val provider =
+            if (geminiHelper.currentModelIdentifier.startsWith("gpt-", ignoreCase = true)) "OpenAI" else "Gemini"
         logViaBridge("AI Workflow ($provider): Starting for project '$appName'\n")
 
+        // reset run-level flags
         conversation.clear()
         selectedFilesForModification.clear()
         bridge.currentProjectDirBridge = projectDir
         bridge.displayAiConclusionBridge(null)
+
+        autoBuildAfterApply = autoBuild
+        autoRunAfterBuild = autoRun
+        hasTriggeredAutoBuild = false
+        encounteredError = false
+        anyChangesApplied = false
 
         lastAppNameForFallback = appName
         lastAppDescriptionForFallback = appDescription
@@ -58,7 +78,11 @@ class GeminiWorkflowCoordinator(
 
         bridge.runOnUiThreadBridge {
             if (files.isEmpty() && !bridge.isModifyingExistingProjectBridge) {
-                bridge.handleErrorBridge("No code files found in the newly created project template. Cannot proceed.", null)
+                encounteredError = true
+                bridge.handleErrorBridge(
+                    "No code files found in the newly created project template. Cannot proceed.",
+                    null
+                )
                 return@runOnUiThreadBridge
             } else if (files.isEmpty() && bridge.isModifyingExistingProjectBridge) {
                 logViaBridge("No existing code files found by scanner in '$appName'. AI will be prompted to create necessary files.\n")
@@ -98,7 +122,7 @@ class GeminiWorkflowCoordinator(
                     Log.d(TAG, "Raw AI file selection response: $responseText")
                     logViaBridge("AI file selection response received.\n")
                     val jsonArrayText = geminiHelper.extractJsonArrayFromText(responseText)
-                    val jsonArray = JSONArray(jsonArrayText)
+                    val jsonArray = org.json.JSONArray(jsonArrayText)
                     selectedFilesForModification.clear()
                     for (i in 0 until jsonArray.length()) {
                         jsonArray.getString(i).takeIf { it.isNotBlank() }?.let { selectedFilesForModification.add(it) }
@@ -112,6 +136,7 @@ class GeminiWorkflowCoordinator(
                     }
                     loadSelectedFilesAndAskForCode(appName, appDescription)
                 } catch (e: Exception) {
+                    encounteredError = true
                     val rawResponse = geminiHelper.extractTextFromApiResponse(response)
                     val errorMessage = when (e) {
                         is IllegalArgumentException -> "AI did not provide a valid list of files for selection: ${e.message}. Response: $rawResponse"
@@ -127,6 +152,7 @@ class GeminiWorkflowCoordinator(
 
     private fun loadSelectedFilesAndAskForCode(appName: String, appDescription: String) {
         val projectDir = bridge.currentProjectDirBridge ?: run {
+            encounteredError = true
             bridge.handleErrorBridge("Project directory is null in loadSelectedFilesAndAskForCode (Coordinator).", null)
             return
         }
@@ -247,6 +273,7 @@ class GeminiWorkflowCoordinator(
                         applyCodeChangesAndOrGetSummary(modifications)
                     }
                 } catch (e: Exception) {
+                    encounteredError = true
                     logViaBridge("⚠️ Error processing structured response: ${e.message}\n")
                     if (attempt < MAX_STRUCTURED_RETRIES) {
                         requestStructuredGeneration(prompt, attempt + 1)
@@ -324,6 +351,7 @@ class GeminiWorkflowCoordinator(
                     }
                     applyCodeChangesAndOrGetSummary(finalModifications)
                 } catch (e: Exception) {
+                    encounteredError = true
                     logViaBridge("⚠️ Error processing fallback file response: ${e.message}\n")
                     if (attempt < MAX_FALLBACK_RETRIES) {
                         sendGeminiFallbackFileRequest(originalModifications, attempt + 1)
@@ -341,6 +369,7 @@ class GeminiWorkflowCoordinator(
 
     private fun applyCodeChangesAndOrGetSummary(modifications: FileModifications) {
         val projectDir = bridge.currentProjectDirBridge ?: run {
+            encounteredError = true
             bridge.handleErrorBridge("Project directory is null before applying changes.", null); return
         }
 
@@ -362,6 +391,7 @@ class GeminiWorkflowCoordinator(
                     var changesApplied = false
                     if (writeSuccessCount > 0) { summary += "✅ Successfully applied $writeSuccessCount file content changes.\n"; changesApplied = true }
                     if (deleteSuccessCount > 0) { summary += "✅ Successfully deleted $deleteSuccessCount files.\n"; changesApplied = true }
+                    anyChangesApplied = anyChangesApplied || changesApplied
                     logViaBridge(summary.ifBlank { "No specific file operations were logged as successful.\n" })
 
                     if (modifications.conclusion.isNullOrBlank()) {
@@ -369,12 +399,10 @@ class GeminiWorkflowCoordinator(
                             logViaBridge("Initial conclusion missing. Requesting summary generation from AI...\n")
                             requestSummaryFromAI(modifications, attempt = 0)
                         } else {
-                            bridge.displayAiConclusionBridge("No specific code changes were made, and no summary was provided by the AI.")
-                            bridge.updateStateBridge(AiWorkflowState.READY_FOR_ACTION)
+                            finishAndMaybeBuild("No specific code changes were made, and no summary was provided by the AI.")
                         }
                     } else {
-                        bridge.displayAiConclusionBridge(modifications.conclusion)
-                        bridge.updateStateBridge(AiWorkflowState.READY_FOR_ACTION)
+                        finishAndMaybeBuild(modifications.conclusion)
                     }
                 }
             }
@@ -384,8 +412,7 @@ class GeminiWorkflowCoordinator(
                 logViaBridge("Attempting to generate a summary as no changes and no initial conclusion.\n")
                 requestSummaryFromAI(modifications, attempt = 0)
             } else {
-                bridge.displayAiConclusionBridge(modifications.conclusion)
-                bridge.updateStateBridge(AiWorkflowState.READY_FOR_ACTION)
+                finishAndMaybeBuild(modifications.conclusion)
             }
         }
     }
@@ -397,13 +424,11 @@ class GeminiWorkflowCoordinator(
 
         if (generatedFiles.isEmpty() && deletedFiles.isEmpty() && originalConclusion.isNullOrBlank()) {
             logViaBridge("No code changes were made, providing a default summary for this specific case.\n")
-            bridge.displayAiConclusionBridge("No specific code changes or deletions were performed by the AI.")
-            bridge.updateStateBridge(AiWorkflowState.READY_FOR_ACTION)
+            finishAndMaybeBuild("No specific code changes or deletions were performed by the AI.")
             return
         }
         if (!originalConclusion.isNullOrBlank()) {
-            bridge.displayAiConclusionBridge(originalConclusion)
-            bridge.updateStateBridge(AiWorkflowState.READY_FOR_ACTION)
+            finishAndMaybeBuild(originalConclusion)
             return
         }
 
@@ -466,6 +491,7 @@ class GeminiWorkflowCoordinator(
                         }
                     }
                 } catch (e: Exception) {
+                    encounteredError = true
                     logViaBridge("⚠️ Error processing summary response: ${e.message}\n")
                     if (attempt < MAX_SUMMARY_RETRIES) {
                         requestSummaryFromAI(currentModifications, attempt + 1); return@sendApiRequest
@@ -473,13 +499,31 @@ class GeminiWorkflowCoordinator(
                     bridge.handleErrorBridge("Failed during AI summary generation after retries: ${e.message}", e)
                     finalSummaryToDisplay = originalConclusion ?: "Error during summary generation."
                 } finally {
-                    bridge.displayAiConclusionBridge(finalSummaryToDisplay)
-                    bridge.updateStateBridge(AiWorkflowState.READY_FOR_ACTION)
+                    finishAndMaybeBuild(finalSummaryToDisplay)
                 }
             },
             responseSchemaJson = geminiHelper.getSummaryOnlySchema(),
             responseMimeTypeOverride = "application/json",
             modelIdentifierOverride = overrideModel
         )
+    }
+
+    // Only auto-build when there was no error and some changes were applied
+    private fun finishAndMaybeBuild(finalSummary: String?) {
+        bridge.displayAiConclusionBridge(finalSummary)
+        bridge.updateStateBridge(AiWorkflowState.READY_FOR_ACTION)
+
+        val projectDir = bridge.currentProjectDirBridge
+        val okToAutoBuild = !encounteredError && anyChangesApplied && projectDir != null
+
+        if (autoBuildAfterApply && okToAutoBuild && !hasTriggeredAutoBuild) {
+            hasTriggeredAutoBuild = true
+            bridge.triggerBuildBridge(projectDir!!, runAfterBuild = autoRunAfterBuild)
+        } else {
+            if (!autoBuildAfterApply) logViaBridge("ℹ️ Auto-build disabled; waiting for user action.\n")
+            if (encounteredError) logViaBridge("⛔ Skipping auto-build due to an earlier error in the AI flow.\n")
+            if (!anyChangesApplied) logViaBridge("ℹ️ Skipping auto-build because no code changes were applied.\n")
+            if (projectDir == null) logViaBridge("⛔ Skipping auto-build: projectDir is null.\n")
+        }
     }
 }

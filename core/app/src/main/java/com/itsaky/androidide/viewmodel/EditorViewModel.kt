@@ -139,23 +139,12 @@ class EditorViewModel : ViewModel() {
     this.files = files
   }
 
-  /**
-   * Add the given file to the list of opened files.
-   *
-   * @param file The file that has been opened.
-   */
   fun addFile(file: File) = updateFiles { files ->
     files.add(file)
   }
 
-  /**
-   * Remove the file at the given index from the list of opened files.
-   *
-   * @param index The index of the closed file.
-   */
   fun removeFile(index: Int) = updateFiles { files ->
     files.removeAt(index)
-
     if (files.isEmpty()) {
       mCurrentFile.value = null
     }
@@ -175,40 +164,18 @@ class EditorViewModel : ViewModel() {
     files[index] = newFile
   }
 
-  /**
-   * Get the opened file at the given index.
-   *
-   * @param index The index of the file.
-   * @return The file at the given index.
-   */
   fun getOpenedFile(index: Int): File {
     return files[index]
   }
 
-  /**
-   * Get the number of files opened.
-   *
-   * @return The number of files opened.
-   */
   fun getOpenedFileCount(): Int {
     return files.size
   }
 
-  /**
-   * Get the list of currently opened files.
-   *
-   * @return The list of opened files.
-   */
   fun getOpenedFiles(): List<File> {
     return Collections.unmodifiableList(files)
   }
 
-  /**
-   * Add an observer to the list of opened files.
-   *
-   * @param lifecycleOwner The lifecycle owner.
-   * @param observer The observer.
-   */
   fun observeFiles(lifecycleOwner: LifecycleOwner?, observer: Observer<MutableList<File>?>?) {
     _files.observe(lifecycleOwner!!, observer!!)
   }
@@ -221,13 +188,6 @@ class EditorViewModel : ViewModel() {
     return mCurrentFile.value?.second
   }
 
-  /**
-   * Get the [OpenedFilesCache] if it is already loaded, otherwise read the cache from the file system
-   * and invoke the given callback.
-   *
-   * If the cache is already loaded, [result] is called on the same thread. Otherwise, it is
-   * always called on the main/UI thread.
-   */
   inline fun getOrReadOpenedFilesCache(crossinline result: (OpenedFilesCache?) -> Unit) {
     return openedFilesCache?.let(result) ?: run {
       viewModelScope.launch(Dispatchers.IO) {
@@ -236,8 +196,9 @@ class EditorViewModel : ViewModel() {
           if (cacheFile.exists() && cacheFile.length() > 0L) {
             cacheFile.bufferedReader().use(OpenedFilesCache::parse)
           } else null
-        } catch (err: IOException) {
-          // ignore exception
+        } catch (err: Exception) {
+          // Catch both IO and IllegalState (projectDir not set)
+          ILogger.ROOT.warn("[EditorViewModel] Skipping read opened files cache: {}", err.message)
           null
         }
 
@@ -261,17 +222,27 @@ class EditorViewModel : ViewModel() {
 
   fun writeOpenedFiles(cache: OpenedFilesCache?) {
     viewModelScope.launch(Dispatchers.IO) {
-      val file = getOpenedFilesCache(true)
-
-      if (cache == null) {
-        file.delete()
+      val file = try {
+        getOpenedFilesCache(true)
+      } catch (err: Exception) {
+        // Catch IllegalStateException when projectDir not set (e.g., Editor closing/switching)
+        ILogger.ROOT.warn("[EditorViewModel] Skipping write opened files cache: {}", err.message)
         return@launch
       }
 
-      val gson = GsonBuilder().setPrettyPrinting().create()
-      val string = gson.toJson(cache)
-      file.createNewFile()
-      file.writeText(string)
+      try {
+        if (cache == null) {
+          file.delete()
+          return@launch
+        }
+
+        val gson = GsonBuilder().setPrettyPrinting().create()
+        val string = gson.toJson(cache)
+        file.createNewFile()
+        file.writeText(string)
+      } catch (io: IOException) {
+        ILogger.ROOT.error("[EditorViewModel] Failed to write opened files cache", io)
+      }
     }.also { job ->
       handleOpenedFilesCacheJobCompletion(job, "write")
     }

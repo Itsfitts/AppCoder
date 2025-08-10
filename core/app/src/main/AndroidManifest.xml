@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:installLocation="internalOnly"
@@ -24,7 +25,6 @@
   <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-
   <application
       android:allowBackup="false"
       android:allowNativeHeapPointerTagging="false"
@@ -41,6 +41,7 @@
       android:supportsRtl="true"
       android:theme="@style/Theme.AndroidIDE"
       tools:ignore="DiscouragedApi,MediaCapabilities,UnusedAttribute">
+
     <activity
         android:exported="true"
         android:name=".activities.CrashHandlerActivity"
@@ -60,17 +61,23 @@
         <category android:name="android.intent.category.LAUNCHER" />
       </intent-filter>
     </activity>
+
     <activity
         android:exported="false"
         android:name=".activities.OnboardingActivity" />
+
+    <!-- Added launchMode=singleTop to allow Editor->Main->AI routing without spawning a new Main -->
     <activity
         android:exported="false"
         android:name=".activities.MainActivity"
-        android:theme="@style/Theme.AndroidIDE" />
+        android:theme="@style/Theme.AndroidIDE"
+        android:launchMode="singleTop" />
+
     <activity
         android:configChanges="orientation|screenSize"
         android:launchMode="singleTop"
         android:name=".activities.editor.EditorActivityKt"/>
+
     <activity android:name=".activities.PreferencesActivity" />
     <activity android:name=".activities.AboutActivity" />
     <activity android:name=".activities.ContributorsActivity" />
@@ -140,5 +147,9 @@
           android:name="autoStoreLocales"
           android:value="true" />
     </service>
+    <service
+        android:name=".services.AiForegroundService"
+        android:exported="false"
+        android:foregroundServiceType="dataSync" />
   </application>
 </manifest>

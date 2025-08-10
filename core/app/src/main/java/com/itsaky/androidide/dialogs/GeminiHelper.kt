@@ -1,3 +1,4 @@
+// GeminiHelper.kt
 package com.itsaky.androidide.dialogs
 
 import android.util.Log
@@ -9,6 +10,7 @@ import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
 import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
 
 data class AiFileInstruction(val filePath: String, val fileContent: String)
@@ -25,6 +27,11 @@ data class FileModifications(
     val conclusion: String?
 )
 
+data class MinimalBatchResult(
+    val filesToWrite: Map<String, String>,
+    val unchanged: List<String>
+)
+
 private fun JSONArray.forEachObject(action: (JSONObject) -> Unit) {
     for (i in 0 until length()) optJSONObject(i)?.let(action)
 }
@@ -38,15 +45,22 @@ class GeminiHelper(
         const val DEFAULT_GEMINI_MODEL = "gemini-2.5-pro"
         private const val OPENAI_DEFAULT_MAX_COMPLETION_TOKENS = 8192
         private const val RAW_LOG_TAG = "GemHelper_RAW"
+
+        // Max thinking budgets (per public docs; subject to provider changes)
+        private const val GEMINI_25_PRO_THINK_MAX = 32768
+        private const val GEMINI_25_FLASH_MAX = 24576
+        private const val GEMINI_25_FLASH_LITE_MAX = 24576
     }
 
     private val baseClient = OkHttpClient.Builder()
         .connectTimeout(120, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
         .writeTimeout(120, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .build()
 
     private val defaultThinkingBudget = 24576
+
     var currentModelIdentifier: String = DEFAULT_GEMINI_MODEL
         private set
 
@@ -100,6 +114,30 @@ class GeminiHelper(
         put("additionalProperties", false)
     }.toString()
 
+    internal fun getMinimalFilesWithUnchangedSchema(): String = JSONObject().apply {
+        put("type", "object")
+        put("properties", JSONObject().apply {
+            put("filesToWrite", JSONObject().apply {
+                put("type", "array"); put("nullable", true)
+                put("items", JSONObject().apply {
+                    put("type", "object")
+                    put("properties", JSONObject().apply {
+                        put("filePath", JSONObject().apply { put("type", "string") })
+                        put("fileContent", JSONObject().apply { put("type", "string") })
+                    })
+                    put("required", JSONArray().put("filePath").put("fileContent"))
+                    put("additionalProperties", false)
+                })
+            })
+            put("unchanged", JSONObject().apply {
+                put("type", "array"); put("nullable", true)
+                put("items", JSONObject().apply { put("type", "string") })
+            })
+        })
+        put("required", JSONArray().put("filesToWrite").put("unchanged"))
+        put("additionalProperties", false)
+    }.toString()
+
     internal fun getSummaryOnlySchema(): String = JSONObject().apply {
         put("type", "object")
         put("properties", JSONObject().apply {
@@ -150,8 +188,9 @@ class GeminiHelper(
         fun enqueueWithRetry(attempt: Int) {
             http.newCall(req).enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
-                    if (e is SocketTimeoutException && attempt == 0) {
-                        Log.w("GeminiHelper", "Timeout on $effectiveModelIdentifier. Retrying once...")
+                    val retryable = (e is SocketTimeoutException) || (e is UnknownHostException)
+                    if (retryable && attempt < 2) {
+                        Log.w("GeminiHelper", "Network error on $effectiveModelIdentifier: ${e.javaClass.simpleName}. Retrying (attempt ${attempt + 1})...")
                         enqueueWithRetry(attempt + 1); return
                     }
                     errorHandlerCallback("API Network Error ($effectiveModelIdentifier): ${e.message}", e)
@@ -185,6 +224,14 @@ class GeminiHelper(
         val id = modelId.lowercase()
         val b = baseClient.newBuilder()
         if (id.startsWith("gpt-5")) {
+            // Longer timeouts for GPT-5 reasoning responses
+            b.readTimeout(300, TimeUnit.SECONDS)
+            b.writeTimeout(300, TimeUnit.SECONDS)
+            b.connectTimeout(60, TimeUnit.SECONDS)
+            b.pingInterval(30, TimeUnit.SECONDS)
+        }
+        if (id.startsWith("gemini-2.5")) {
+            // Longer timeouts for Gemini 2.5 (thinking can increase latency)
             b.readTimeout(300, TimeUnit.SECONDS)
             b.writeTimeout(300, TimeUnit.SECONDS)
             b.connectTimeout(60, TimeUnit.SECONDS)
@@ -195,25 +242,21 @@ class GeminiHelper(
 
     private fun openAiTokenParamName(modelId: String): String {
         val id = modelId.lowercase()
-        return if (id.startsWith("gpt-5") || id.startsWith("gpt-4o") || id.startsWith("gpt-4.1"))
+        return if (id.startsWith("gpt-5") || id.startsWith("gpt-4.1"))
             "max_completion_tokens" else "max_tokens"
     }
 
     private fun openAiMaxCompletionTokens(modelId: String): Int {
         val id = modelId.lowercase()
         return when {
-            id.startsWith("gpt-5-nano") -> 2048
-            id.startsWith("gpt-5-mini") -> 8192
-            id.startsWith("gpt-5") -> 4096
-            id.startsWith("gpt-4o") || id.startsWith("gpt-4.1") -> 4096
+            id.startsWith("gpt-5-nano") -> 20_000
+            id.startsWith("gpt-5-mini") -> 20_000
+            id.startsWith("gpt-5")      -> 40_000
+            id.startsWith("gpt-4.1")    -> 4_096
             else -> OPENAI_DEFAULT_MAX_COMPLETION_TOKENS
         }
     }
 
-    /**
-     * Recursively traverses a JSON object or array and removes any key named "additionalProperties".
-     * This is necessary because the Gemini API does not support this field in its schema definition.
-     */
     private fun removeUnsupportedKeys(json: Any): Any {
         when (json) {
             is JSONObject -> {
@@ -224,7 +267,6 @@ class GeminiHelper(
                     if (key == "additionalProperties") {
                         keysToRemove.add(key)
                     } else {
-                        // Recursively clean sub-objects/arrays
                         removeUnsupportedKeys(json.get(key))
                     }
                 }
@@ -241,6 +283,7 @@ class GeminiHelper(
         return json
     }
 
+    // OpenAI Chat Completions payload (request high reasoning effort for GPT-5; no unsupported fields)
     private fun buildOpenAiRequest(
         modelId: String,
         geminiContents: List<JSONObject>,
@@ -267,11 +310,15 @@ class GeminiHelper(
         val body = JSONObject().apply {
             put("model", modelId)
             put("messages", messages)
-            put(openAiTokenParamName(modelId), openAiMaxCompletionTokens(modelId))
+            // Token limits: let the API use defaults; do not set max_(completion_)tokens explicitly
         }
 
-        val supportsJsonSchemaFormat = (modelId.startsWith("gpt-4o") || modelId.startsWith("gpt-5")) && !modelId.contains("nano")
-
+        val supportsJsonSchemaFormat = run {
+            val idLower = modelId.lowercase()
+            idLower.startsWith("gpt-5") &&
+                    !idLower.contains("nano") &&
+                    !idLower.contains("mini")
+        }
         if (!responseSchemaJson.isNullOrBlank()) {
             if (supportsJsonSchemaFormat) {
                 Log.d(RAW_LOG_TAG, "Using 'json_schema' response_format for model: $modelId")
@@ -289,26 +336,37 @@ class GeminiHelper(
             }
         }
 
+        val idLower = modelId.lowercase()
+        if (idLower.startsWith("gpt-5")) {
+            body.put("reasoning_effort", "high")
+        }
+
         return body
     }
 
+    // Gemini request payload (mediaResolution MEDIUM for all 2.5 models currently)
     private fun buildGeminiRequest(
         contents: List<JSONObject>,
         responseSchemaJson: String?,
         responseMimeTypeOverride: String?,
         effectiveModelIdentifier: String
     ): JSONObject? {
+        val idLower = effectiveModelIdentifier.lowercase()
+        val isGemini25 = idLower.startsWith("gemini-2.5")
+        val isPro = idLower.startsWith("gemini-2.5-pro")
+        val isFlash = idLower.startsWith("gemini-2.5-flash")
+        val isFlashLite = idLower.contains("flash-lite")
+
         val generationConfig = JSONObject().apply {
             put("temperature", 1)
             put("maxOutputTokens", 200000)
             put("topP", 0.95)
             put("topK", 40)
+
             if (!responseSchemaJson.isNullOrBlank()) {
                 put("response_mime_type", responseMimeTypeOverride ?: "application/json")
                 try {
-                    // Create a mutable JSONObject from the schema string.
                     val originalSchema = JSONObject(responseSchemaJson)
-                    // Clean the schema by removing keys that Gemini does not support.
                     val cleanedSchema = removeUnsupportedKeys(originalSchema) as JSONObject
                     put("response_schema", cleanedSchema)
                 } catch (e: JSONException) {
@@ -316,10 +374,32 @@ class GeminiHelper(
                     return null
                 }
             }
+
+            if (isGemini25) {
+                val budget = when {
+                    isPro -> GEMINI_25_PRO_THINK_MAX
+                    isFlash -> GEMINI_25_FLASH_MAX
+                    isFlashLite -> GEMINI_25_FLASH_LITE_MAX
+                    else -> defaultThinkingBudget
+                }
+                put("thinkingConfig", JSONObject().apply {
+                    put("thinkingBudget", budget)   // maximize thinking tokens
+                    put("includeThoughts", true)    // include thought summaries
+                })
+
+                // All 2.5 models (Pro/Flash/Flash-Lite) use MEDIA_RESOLUTION_MEDIUM currently
+                put("mediaResolution", "MEDIA_RESOLUTION_MEDIUM")
+            }
         }
-        if (effectiveModelIdentifier.startsWith("gemini-2.5")) {
-            generationConfig.put("thinkingConfig", JSONObject().put("thinkingBudget", defaultThinkingBudget))
+
+        // Keep for compatibility with earlier previews that expected thinkingConfig presence
+        if (isGemini25) {
+            generationConfig.put("thinkingConfig", generationConfig.optJSONObject("thinkingConfig") ?: JSONObject().apply {
+                put("thinkingBudget", defaultThinkingBudget)
+                put("includeThoughts", true)
+            })
         }
+
         return JSONObject().apply {
             put("contents", JSONArray(contents))
             put("generationConfig", generationConfig)
@@ -332,18 +412,42 @@ class GeminiHelper(
         }
     }
 
+    // When includeThoughts=true, Gemini may put a "thought" part first.
+    // Skip thought parts and prefer the first JSON-like non-thought text part; otherwise first non-thought text.
     fun extractTextFromApiResponse(response: JSONObject): String {
         return try {
-            if (response.has("candidates")) { // Gemini Response
-                response.optJSONArray("candidates")?.optJSONObject(0)
-                    ?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)
-                    ?.optString("text", "") ?: ""
-            } else if (response.has("choices")) { // OpenAI Response
+            if (response.has("candidates")) {
+                val parts = response.optJSONArray("candidates")
+                    ?.optJSONObject(0)
+                    ?.optJSONObject("content")
+                    ?.optJSONArray("parts") ?: return ""
+
+                var firstNonThought: String? = null
+                var jsonLike: String? = null
+
+                for (i in 0 until parts.length()) {
+                    val part = parts.optJSONObject(i) ?: continue
+                    if (part.optBoolean("thought", false)) continue
+
+                    val raw = part.optString("text", null) ?: continue
+                    if (raw.isBlank()) continue
+
+                    val text = unwrapCodeFences(raw).trim()
+                    if (firstNonThought == null) firstNonThought = text
+
+                    if ((text.startsWith("{") && text.endsWith("}")) ||
+                        (text.startsWith("[") && text.endsWith("]"))
+                    ) {
+                        jsonLike = text
+                        break
+                    }
+                }
+
+                jsonLike ?: firstNonThought ?: ""
+            } else if (response.has("choices")) {
                 val firstChoice = response.optJSONArray("choices")?.optJSONObject(0) ?: return ""
                 val message = firstChoice.optJSONObject("message") ?: return ""
-
                 message.optString("content", null)?.let { if (it.isNotBlank()) return it }
-
                 message.optJSONArray("tool_calls")?.let { toolCalls ->
                     if (toolCalls.length() > 0) {
                         toolCalls.optJSONObject(0)
@@ -362,6 +466,19 @@ class GeminiHelper(
             Log.e("GeminiHelper", "Error extracting content string from response", e)
             ""
         }
+    }
+
+    private fun unwrapCodeFences(text: String): String {
+        var t = text.trim()
+        if (t.startsWith("```")) {
+            t = t.removePrefix("```")
+            val newlineIdx = t.indexOf('\n')
+            if (newlineIdx != -1) {
+                t = t.substring(newlineIdx + 1)
+            }
+            if (t.endsWith("```")) t = t.removeSuffix("```")
+        }
+        return t.trim()
     }
 
     private fun JSONObject.optJSONArrayByKeys(vararg keys: String): JSONArray? {
@@ -385,21 +502,18 @@ class GeminiHelper(
         var conclusion: String? = null
         try {
             val root = JSONObject(jsonText).unwrapDataIfPresent()
-
             val writeArray = root.optJSONArrayByKeys("filesToWrite", "files_to_write")
             writeArray?.forEachObject { obj ->
                 val path = obj.optStringByKeys("filePath", "file_path") ?: ""
                 val content = obj.optStringByKeys("fileContent", "file_content") ?: ""
                 if (path.isNotBlank()) filesToWrite.add(AiFileInstruction(path, content))
             }
-
             val deleteArray = root.optJSONArrayByKeys("filesToDelete", "files_to_delete")
             deleteArray?.let { arr ->
                 for (i in 0 until arr.length()) {
                     arr.optString(i)?.takeIf { it.isNotBlank() }?.let { filesToDelete.add(it) }
                 }
             }
-
             conclusion = root.optStringByKeys("conclusion", "summary")
         } catch (e: JSONException) {
             Log.e("GeminiHelper", "Error parsing AiStructuredResponse JSON: '$jsonText'. Error: ${e.message}", e)
@@ -428,12 +542,42 @@ class GeminiHelper(
         return filesMap.takeIf { it.isNotEmpty() }
     }
 
-    fun parseSummaryResponse(jsonText: String): String? = try {
-        val root = JSONObject(jsonText).unwrapDataIfPresent()
-        root.optStringByKeys("summary", "conclusion")
-    } catch (e: JSONException) {
-        Log.e("GeminiHelper", "Error parsing AiSummaryResponse JSON: '$jsonText'. Error: ${e.message}", e)
-        null
+    fun parseMinimalFilesAndUnchanged(jsonText: String): MinimalBatchResult? {
+        return try {
+            val root = JSONObject(jsonText).unwrapDataIfPresent()
+
+            val filesMap = mutableMapOf<String, String>()
+            root.optJSONArrayByKeys("filesToWrite", "files_to_write")?.forEachObject { obj ->
+                val path = obj.optStringByKeys("filePath", "file_path") ?: ""
+                val content = obj.optStringByKeys("fileContent", "file_content") ?: ""
+                if (path.isNotBlank()) filesMap[path] = content
+            }
+
+            val unchanged = mutableListOf<String>()
+            root.optJSONArrayByKeys("unchanged")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    arr.optString(i)?.takeIf { it.isNotBlank() }?.let { unchanged.add(it) }
+                }
+            }
+
+            MinimalBatchResult(
+                filesToWrite = filesMap,
+                unchanged = unchanged
+            )
+        } catch (e: JSONException) {
+            Log.e("GeminiHelper", "Error parsing MinimalBatchResult JSON: '$jsonText'. Error: ${e.message}", e)
+            null
+        }
+    }
+
+    fun parseSummaryResponse(jsonText: String): String? {
+        return try {
+            val root = JSONObject(jsonText).unwrapDataIfPresent()
+            root.optStringByKeys("summary", "conclusion")
+        } catch (e: JSONException) {
+            Log.e("GeminiHelper", "Error parsing AiSummaryResponse JSON: '$jsonText'. Error: ${e.message}", e)
+            null
+        }
     }
 
     fun convertAiResponseToFileModifications(aiResponse: AiStructuredResponse): FileModifications {

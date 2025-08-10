@@ -1,3 +1,5 @@
+// EditorHandlerActivity.kt (full file, with guards to prevent "project dir not set" crash)
+
 package com.itsaky.androidide.activities.editor
 
 import android.annotation.SuppressLint
@@ -27,6 +29,7 @@ import com.itsaky.androidide.actions.ActionData
 import com.itsaky.androidide.actions.ActionItem.Location
 import com.itsaky.androidide.actions.ActionsRegistry
 import com.itsaky.androidide.actions.FillMenuParams
+import com.itsaky.androidide.activities.MainActivity
 import com.itsaky.androidide.dialogs.AutoFixStateManager
 import com.itsaky.androidide.dialogs.FileEditorActivity
 import com.itsaky.androidide.editor.language.treesitter.JavaLanguage
@@ -34,6 +37,7 @@ import com.itsaky.androidide.editor.language.treesitter.JsonLanguage
 import com.itsaky.androidide.editor.language.treesitter.KotlinLanguage
 import com.itsaky.androidide.editor.language.treesitter.LogLanguage
 import com.itsaky.androidide.editor.language.treesitter.TSLanguageRegistry
+import com.itsaky.androidide.editor.language.treesitter.TreeSitterLanguage
 import com.itsaky.androidide.editor.language.treesitter.XMLLanguage
 import com.itsaky.androidide.editor.schemes.IDEColorSchemeProvider
 import com.itsaky.androidide.editor.ui.IDEEditor
@@ -70,16 +74,24 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
   protected val isOpenedFilesSaved = AtomicBoolean(false)
   private val buildLogBuilder = StringBuilder()
 
+  // NEW: gate writes to "opened files" cache to avoid crashes when projectDir is not set
+  private val allowOpenedFilesCacheWrites = AtomicBoolean(true)
+
   companion object {
     private const val DEBUG_TAG = "AutoFixDebug"
     private const val TAG = "EditorHandlerActivity"
     private const val AI_FIX_RUN_DELAY_MS = 2500L
     const val EXTRA_AUTO_BUILD_PROJECT = "com.itsaky.androidide.AUTO_BUILD_PROJECT"
+
+    // Routing flags to deliver an AI editor launch request to MainActivity
+    private const val EXTRA_REQUEST_AI_EDITOR = "com.itsaky.androidide.REQUEST_AI_EDITOR"
+    private const val EXTRA_AI_PROJECTS_ROOT_OVERRIDE = "com.itsaky.androidide.AI_PROJECTS_ROOT_OVERRIDE"
   }
 
   val isAutoFixModeActivePublic: Boolean
     get() = AutoFixStateManager.isAutoFixModeGloballyActive
 
+  // Kept for compatibility (legacy path); not used by the new routing.
   private val aiActivityLauncher: ActivityResultLauncher<Intent> =
     registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
       Log.d(DEBUG_TAG, "EditorHandlerActivity: ActivityResultLauncher - Result received. ResultCode: ${result.resultCode}")
@@ -142,7 +154,10 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
   override fun preDestroy() {
     Log.d(DEBUG_TAG, "EditorHandlerActivity: preDestroy called")
     super.preDestroy()
-    TSLanguageRegistry.instance.destroy()
+    // Stop any further cache writes during teardown
+    allowOpenedFilesCacheWrites.set(false)
+    // Do NOT destroy the global TS registry here; other activities may depend on it.
+    // TSLanguageRegistry.instance.destroy()
     editorViewModel.removeAllFiles()
   }
 
@@ -162,29 +177,67 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     }
     editorViewModel._filesModified.observe(this) { invalidateOptionsMenu() }
     editorViewModel._filesSaving.observe(this) { invalidateOptionsMenu() }
+
+    // IMPORTANT: Only write opened-files cache when projectDir is set and writes are allowed.
     editorViewModel.observeFiles(this) {
-      val currentFile = getCurrentEditor()?.editor?.file?.absolutePath ?: run {
-        editorViewModel.writeOpenedFiles(null)
+      if (!allowOpenedFilesCacheWrites.get()) {
+        Log.d(TAG, "observeFiles: Cache writes disabled; skipping.")
+        return@observeFiles
+      }
+      val projectIsOpen = try {
+        ProjectManagerImpl.getInstance().projectDir
+        true
+      } catch (_: IllegalStateException) {
+        false
+      }
+      if (!projectIsOpen) {
+        Log.d(TAG, "observeFiles: Project dir not set; skipping cache write.")
         editorViewModel.openedFilesCache = null
         return@observeFiles
       }
-      getOpenedFiles().also {
-        val cache = OpenedFilesCache(currentFile, it)
+
+      val currentFile = getCurrentEditor()?.editor?.file?.absolutePath ?: run {
+        // Avoid calling writeOpenedFiles(null) here to prevent background coroutine using missing project dir
+        editorViewModel.openedFilesCache = null
+        return@observeFiles
+      }
+
+      getOpenedFiles().also { opened ->
+        if (!allowOpenedFilesCacheWrites.get()) return@observeFiles
+        val cache = OpenedFilesCache(currentFile, opened)
+        // Project is open; safe to enqueue write
         editorViewModel.writeOpenedFiles(cache)
         editorViewModel.openedFilesCache = cache
       }
     }
+
+    // Idempotent TS language registration (prevents AlreadyRegisteredException)
     lifecycleScope.launch {
-      TSLanguageRegistry.instance.register(JavaLanguage.TS_TYPE, JavaLanguage.FACTORY)
-      TSLanguageRegistry.instance.register(KotlinLanguage.TS_TYPE_KT, KotlinLanguage.FACTORY)
-      TSLanguageRegistry.instance.register(KotlinLanguage.TS_TYPE_KTS, KotlinLanguage.FACTORY)
-      TSLanguageRegistry.instance.register(LogLanguage.TS_TYPE, LogLanguage.FACTORY)
-      TSLanguageRegistry.instance.register(JsonLanguage.TS_TYPE, JsonLanguage.FACTORY)
-      TSLanguageRegistry.instance.register(XMLLanguage.TS_TYPE, XMLLanguage.FACTORY)
+      safeRegister<JavaLanguage>(JavaLanguage.TS_TYPE, JavaLanguage.FACTORY)
+      safeRegister<KotlinLanguage>(KotlinLanguage.TS_TYPE_KT, KotlinLanguage.FACTORY)
+      safeRegister<KotlinLanguage>(KotlinLanguage.TS_TYPE_KTS, KotlinLanguage.FACTORY)
+      safeRegister<LogLanguage>(LogLanguage.TS_TYPE, LogLanguage.FACTORY)
+      safeRegister<JsonLanguage>(JsonLanguage.TS_TYPE, JsonLanguage.FACTORY)
+      safeRegister<XMLLanguage>(XMLLanguage.TS_TYPE, XMLLanguage.FACTORY)
       IDEColorSchemeProvider.initIfNeeded()
     }
+
     updateAutoFixModeIndicator()
     Log.d(DEBUG_TAG, "EditorHandlerActivity: onCreate END. Global AutoFix Active: ${AutoFixStateManager.isAutoFixModeGloballyActive}")
+  }
+
+  // Generic, typed, idempotent registration helper
+  private fun <T : TreeSitterLanguage> safeRegister(
+    type: String,
+    factory: TreeSitterLanguage.Factory<T>
+  ) {
+    try {
+      TSLanguageRegistry.instance.register(type, factory)
+    } catch (e: TSLanguageRegistry.AlreadyRegisteredException) {
+      Log.d(TAG, "TS language already registered: $type — skipping")
+    } catch (t: Throwable) {
+      Log.e(TAG, "Failed to register TS language: $type", t)
+    }
   }
 
   private fun handleIntentExtras(intent: Intent?) {
@@ -193,10 +246,7 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     val shouldAutoBuild = intent.getBooleanExtra(EXTRA_AUTO_BUILD_PROJECT, false)
     if (shouldAutoBuild) {
       Log.i(TAG, "Received EXTRA_AUTO_BUILD_PROJECT. Triggering build automatically.")
-
-      binding.root.postDelayed({
-        initiateAutoQuickRun()
-      }, 500)
+      binding.root.postDelayed({ initiateAutoQuickRun() }, 500)
     }
   }
 
@@ -226,8 +276,38 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     updateAutoFixModeIndicator()
   }
 
+  // Route to MainActivity (singleTop) to launch AI editor and finish this Editor.
+  private fun requestAiEditorViaMainActivity(
+    projectsBaseDirPath: String?,
+    prefillName: String?,
+    prefillDescription: String?,
+    isAutoRetryAttempt: Boolean
+  ) {
+    Log.d(DEBUG_TAG, "Routing to MainActivity to launch AI Editor. Finishing current Editor.")
+    // Stop any future cache writes before we finish
+    allowOpenedFilesCacheWrites.set(false)
+
+    val intent = Intent(this, MainActivity::class.java).apply {
+      putExtra(EXTRA_REQUEST_AI_EDITOR, true)
+      putExtra(EXTRA_AI_PROJECTS_ROOT_OVERRIDE, projectsBaseDirPath)
+      if (!prefillName.isNullOrBlank()) {
+        putExtra(FileEditorActivity.EXTRA_PREFILL_APP_NAME, prefillName)
+      }
+      if (!prefillDescription.isNullOrBlank()) {
+        putExtra(FileEditorActivity.EXTRA_PREFILL_APP_DESCRIPTION, prefillDescription)
+      }
+      putExtra(FileEditorActivity.EXTRA_IS_AUTO_RETRY_ATTEMPT, isAutoRetryAttempt)
+      // Reuse existing MainActivity if available
+      addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+    }
+    startActivity(intent)
+    // Ensure this Editor finishes so a fresh Editor can start later
+    finish()
+  }
+
   private fun launchAiEditorInteraction(intent: Intent) {
-    Log.d(DEBUG_TAG, "EditorHandlerActivity: launchAiEditorInteraction called")
+    // Legacy path (kept for compatibility, but not used in our new routing)
+    Log.d(DEBUG_TAG, "EditorHandlerActivity: launchAiEditorInteraction called (legacy)")
     aiActivityLauncher.launch(intent)
   }
 
@@ -241,7 +321,6 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     val isActive = AutoFixStateManager.isAutoFixModeGloballyActive
     Log.d(DEBUG_TAG, "EditorHandlerActivity: updateAutoFixModeIndicator called. Global isActive = $isActive")
     try {
-      // WARNING FIXED: Removed unnecessary safe call '?' as bottomSheet is non-null.
       content.bottomSheet.setAutoFixIndicatorVisibility(isActive)
     } catch (e: Exception) {
       Log.e(DEBUG_TAG, "EditorHandlerActivity: updateAutoFixModeIndicator - FAILED. Error: ${e.message}", e)
@@ -255,23 +334,17 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     val currentProjectName: String? = currentProjectFile?.name
     val projectsBaseDirPath: String? = currentProjectFile?.parentFile?.absolutePath
 
-    // WARNING FIXED: Replaced '?.any' and '?:' with '.orEmpty().any' for cleaner null handling.
     val wasAssemblyTask = tasks.orEmpty().any { it?.contains("assemble", ignoreCase = true) == true }
     if (!wasAssemblyTask) {
-      Log.w(DEBUG_TAG, "handleBuildFailed: Build failure was not an assembly task (tasks: ${tasks.orEmpty().joinToString()}). Showing manual dialog.")
       showManualBuildFailedDialog(capturedLog, currentProjectName, projectsBaseDirPath)
       return
     }
 
-    Log.d(DEBUG_TAG, "handleBuildFailed: Entered for assembly task. Checking AutoFixStateManager.canAttemptAutoFix(). Result: ${AutoFixStateManager.canAttemptAutoFix()}")
-
     if (AutoFixStateManager.canAttemptAutoFix()) {
-      Log.d(DEBUG_TAG, "handleBuildFailed: Auto-fix conditions MET via Global State.")
       if (currentProjectName != null && projectsBaseDirPath != null) {
         if (AutoFixStateManager.consumeAttempt()) {
           val attemptsMade = AutoFixStateManager.MAX_GLOBAL_AUTO_FIX_ATTEMPTS - AutoFixStateManager.autoFixAttemptsRemainingGlobal
           val toastMessage = "Auto-fixing build error (Attempt $attemptsMade/${AutoFixStateManager.MAX_GLOBAL_AUTO_FIX_ATTEMPTS})..."
-          Log.i(DEBUG_TAG, "handleBuildFailed: Triggering AUTOMATED AI fix. $toastMessage Remaining: ${AutoFixStateManager.autoFixAttemptsRemainingGlobal}")
           Toast.makeText(this, toastMessage, Toast.LENGTH_SHORT).show()
 
           val combinedDescriptionForAi = """
@@ -283,30 +356,27 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
                         ${getString(R.string.ai_fix_failure_prefix)}${capturedLog}
                     """.trimIndent()
 
-          val intent = FileEditorActivity.newIntent(this, projectsBaseDirPath).apply {
-            putExtra(FileEditorActivity.EXTRA_PREFILL_APP_NAME, currentProjectName)
-            putExtra(FileEditorActivity.EXTRA_PREFILL_APP_DESCRIPTION, combinedDescriptionForAi)
-            putExtra(FileEditorActivity.EXTRA_IS_AUTO_RETRY_ATTEMPT, true)
-          }
-          launchAiEditorInteraction(intent)
+          // ROUTE via MainActivity and FINISH this Editor first
+          requestAiEditorViaMainActivity(
+            projectsBaseDirPath,
+            currentProjectName,
+            combinedDescriptionForAi,
+            isAutoRetryAttempt = true
+          )
           return
         } else {
-          Log.w(DEBUG_TAG, "handleBuildFailed: canAttemptAutoFix was true, but consumeAttempt failed (no attempts left or issue). Showing manual dialog.")
           AutoFixStateManager.disableAutoFixMode()
           updateAutoFixModeIndicator()
           showManualBuildFailedDialog(capturedLog, currentProjectName, projectsBaseDirPath)
         }
       } else {
-        Log.e(DEBUG_TAG, "handleBuildFailed: Auto-fix: Cannot retry - Project details missing. Disabling global auto-fix.")
         Toast.makeText(this, "Auto-fix: Project details missing. Stopping.", Toast.LENGTH_LONG).show()
         AutoFixStateManager.disableAutoFixMode()
         updateAutoFixModeIndicator()
         showManualBuildFailedDialog(capturedLog, currentProjectName, projectsBaseDirPath)
       }
     } else {
-      Log.d(DEBUG_TAG, "handleBuildFailed: Global Auto-fix conditions NOT MET as per canAttemptAutoFix().")
       if (AutoFixStateManager.isAutoFixModeGloballyActive && AutoFixStateManager.autoFixAttemptsRemainingGlobal <= 0) {
-        Log.i(DEBUG_TAG, "handleBuildFailed: Global Auto-fix: Max attempts were reached.")
         Toast.makeText(this, "Auto-fix attempts finished.", Toast.LENGTH_LONG).show()
       }
       AutoFixStateManager.disableAutoFixMode()
@@ -320,7 +390,6 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     currentProjectName: String?,
     projectsBaseDirPath: String?
   ) {
-    Log.d(DEBUG_TAG, "showManualBuildFailedDialog: Displaying manual dialog.")
     val errorMessagePrefix = getString(R.string.ai_fix_failure_prefix)
     val fullDialogMessage = if (capturedLog.isBlank()) {
       errorMessagePrefix + getString(R.string.build_status_failed) + "\n\n" + getString(R.string.build_log_empty)
@@ -333,25 +402,24 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
         getString(R.string.action_retry_build_with_ai),
         { dialog, _ ->
           dialog.dismiss()
-          Log.d(DEBUG_TAG, "showManualBuildFailedDialog: User clicked 'Retry with AI'. Disabling any active global auto-fix first.")
-          AutoFixStateManager.disableAutoFixMode() // User is taking manual control
+          // User is taking manual control; disable global auto-fix
+          AutoFixStateManager.disableAutoFixMode()
           updateAutoFixModeIndicator()
 
           if (currentProjectName != null && projectsBaseDirPath != null) {
-            val intent = FileEditorActivity.newIntent(this, projectsBaseDirPath).apply{
-              putExtra(FileEditorActivity.EXTRA_PREFILL_APP_NAME, currentProjectName)
-              putExtra(FileEditorActivity.EXTRA_PREFILL_APP_DESCRIPTION, fullDialogMessage)
-            }
-            Log.d(DEBUG_TAG, "showManualBuildFailedDialog: Launching FileEditorActivity for manual AI retry.")
-            launchAiEditorInteraction(intent)
+            // ROUTE via MainActivity and FINISH this Editor
+            requestAiEditorViaMainActivity(
+              projectsBaseDirPath,
+              currentProjectName,
+              fullDialogMessage,
+              isAutoRetryAttempt = false
+            )
           } else {
-            Log.e(DEBUG_TAG, "showManualBuildFailedDialog: Cannot open AI editor (manual): Project details missing.")
             Toast.makeText(this, getString(R.string.msg_cannot_open_ai_editor_project_details_missing), Toast.LENGTH_LONG).show()
           }
         },
         getString(android.R.string.cancel),
         { dialog, _ ->
-          Log.d(DEBUG_TAG, "showManualBuildFailedDialog: User clicked 'Cancel'. Disabling global auto-fix.")
           dialog.dismiss()
           AutoFixStateManager.disableAutoFixMode()
           updateAutoFixModeIndicator()
@@ -366,10 +434,7 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
   private suspend fun findApk(): File? = withContext(Dispatchers.IO) {
     val projectManager = ProjectManagerImpl.getInstance()
     val projectDir = try { projectManager.projectDir } catch (e: Exception) { null }
-    if (projectDir == null) {
-      log.error("Cannot find APK, project directory is not available.")
-      return@withContext null
-    }
+    if (projectDir == null) return@withContext null
 
     val workspace = projectManager.getWorkspace()
     val appModules = workspace?.getSubProjects()
@@ -377,7 +442,6 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
       ?.filter { it.isApplication }
 
     if (appModules.isNullOrEmpty()) {
-      log.warn("No application modules found. Falling back to generic search in common directories.")
       val searchBase = File(projectDir, "app/build/outputs/apk")
       return@withContext searchInDirectory(searchBase)
     }
@@ -385,14 +449,9 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     for (module in appModules) {
       val searchDir = File(module.projectDir, "build/outputs/apk")
       val foundApk = searchInDirectory(searchDir)
-      if (foundApk != null) {
-        log.info("Found APK in module '${module.name}' at path: ${foundApk.path}")
-        return@withContext foundApk
-      }
+      if (foundApk != null) return@withContext foundApk
     }
-
-    log.error("Could not find any APK in any application module's output directory.")
-    return@withContext null
+    null
   }
 
   private fun searchInDirectory(directory: File): File? {
@@ -412,31 +471,24 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     val wasAssemblyTask = tasks.any { it?.contains("assemble", ignoreCase = true) == true }
 
     if (wasAssemblyTask) {
-      Log.i(DEBUG_TAG, "Full assembly build successful. Searching for APK to install.")
       Toast.makeText(this, "Build successful! Installing app...", Toast.LENGTH_LONG).show()
 
       lifecycleScope.launch {
         val apkFile = findApk()
         if (apkFile != null) {
-          Log.i(DEBUG_TAG, "handleAutoFixBuildSuccess: Found APK at ${apkFile.absolutePath}. Triggering installation.")
           installApk(apkFile)
-          Log.i(DEBUG_TAG, "handleAutoFixBuildSuccess: Disabling auto-fix mode after successful build and run.")
           AutoFixStateManager.disableAutoFixMode()
           updateAutoFixModeIndicator()
         } else {
-          Log.e(DEBUG_TAG, "handleAutoFixBuildSuccess: Build was successful, but could not find the output APK. Stopping auto-fix.")
           Toast.makeText(this@EditorHandlerActivity, "Build OK, but couldn't find APK to install.", Toast.LENGTH_LONG).show()
           AutoFixStateManager.disableAutoFixMode()
           updateAutoFixModeIndicator()
         }
       }
     } else {
-      Log.w(DEBUG_TAG, "Partial build successful (tasks: ${tasks.joinToString()}). Re-triggering build process to continue.")
       lifecycleScope.launch {
         delay(1500)
         if (isFinishing || isDestroyed) return@launch
-
-        Log.i(DEBUG_TAG, "handleAutoFixBuildSuccess: Programmatically 'pressing' the run button again.")
         initiateAutoQuickRun()
       }
     }
@@ -444,47 +496,61 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
 
   override fun onProjectInitialized(result: InitializeResult) {
     super.onProjectInitialized(result)
-    Log.i(DEBUG_TAG, "onProjectInitialized: Result successful: ${result.isSuccessful}. Global AutoFix Active: ${AutoFixStateManager.isAutoFixModeGloballyActive}")
-
     if (AutoFixStateManager.isAutoFixModeGloballyActive) {
-      if (result.isSuccessful) {
-        Log.i(DEBUG_TAG, "onProjectInitialized: Project sync successful & Auto-fix IS globally active. Scheduling auto-run.")
-      } else {
-        Log.w(DEBUG_TAG, "onProjectInitialized: Project sync FAILED (success=${result.isSuccessful}) but Auto-fix IS globally active. STILL Scheduling auto-run to let the build decide.")
-        Toast.makeText(this, "Notice: Project sync had issues after AI fix, attempting build anyway...", Toast.LENGTH_LONG).show()
-      }
       lifecycleScope.launch(Dispatchers.Main) {
-        Log.d(DEBUG_TAG, "onProjectInitialized: Starting ${AI_FIX_RUN_DELAY_MS}ms delay before auto-run.")
         delay(AI_FIX_RUN_DELAY_MS)
-        if (isDestroyed || isFinishing) {
-          Log.w(DEBUG_TAG, "onProjectInitialized: Activity destroyed/finishing during auto-run delay.")
-          return@launch
-        }
-        Log.i(DEBUG_TAG, "onProjectInitialized: Attempting to auto-run project (after AI fix flow / or just because auto-fix is on and sync finished).")
+        if (isDestroyed || isFinishing) return@launch
         initiateAutoQuickRun()
       }
-    } else if (!result.isSuccessful) {
-      Log.w(DEBUG_TAG, "onProjectInitialized: Project sync failed, and global auto-fix was NOT active. No special action.")
     }
   }
 
-  // ... (Rest of the file is unchanged and correct) ...
-
   override fun postProjectInit(isSuccessful: Boolean, failure: TaskExecutionResult.Failure?) {
     super.postProjectInit(isSuccessful, failure)
-    Log.i(DEBUG_TAG, "postProjectInit: Project sync finished. Successful: $isSuccessful. Global AutoFix Active: ${AutoFixStateManager.isAutoFixModeGloballyActive}. Failure: ${failure?.name}")
     if (!isSuccessful && AutoFixStateManager.isAutoFixModeGloballyActive) {
-      Log.w(DEBUG_TAG, "postProjectInit: Project sync FAILED (isSuccessful=false) while AutoFixStateManager was active. Global auto-fix REMAINS ACTIVE. Build from auto-run will determine next steps.")
+      Log.w(DEBUG_TAG, "postProjectInit: Project sync FAILED while AutoFix active.")
     }
   }
 
   override fun saveOpenedFiles() {
+    if (!allowOpenedFilesCacheWrites.get()) {
+      isOpenedFilesSaved.set(true)
+      return
+    }
+    val projectIsOpen = try {
+      ProjectManagerImpl.getInstance().projectDir
+      true
+    } catch (_: IllegalStateException) {
+      false
+    }
+    if (!projectIsOpen) {
+      Log.d(TAG, "saveOpenedFiles: Project dir not set; skipping cache write.")
+      isOpenedFilesSaved.set(true)
+      return
+    }
     writeOpenedFilesCache(getOpenedFiles(), getCurrentEditor()?.editor?.file)
   }
 
   private fun writeOpenedFilesCache(openedFiles: List<OpenedFile>, selectedFile: File?) {
+    if (!allowOpenedFilesCacheWrites.get()) {
+      isOpenedFilesSaved.set(true)
+      return
+    }
+    val projectIsOpen = try {
+      ProjectManagerImpl.getInstance().projectDir
+      true
+    } catch (_: IllegalStateException) {
+      false
+    }
+    if (!projectIsOpen) {
+      Log.d(TAG, "writeOpenedFilesCache: Project dir not set; skipping cache write.")
+      isOpenedFilesSaved.set(true)
+      return
+    }
+
     if (selectedFile == null || openedFiles.isEmpty()) {
-      editorViewModel.writeOpenedFiles(null)
+      // Avoid enqueuing a background write with null; just clear local cache reference.
+      editorViewModel.writeOpenedFiles(null) // project is open; safe to clear persisted cache
       editorViewModel.openedFilesCache = null
       log.debug("[onPause] No opened files. Opened files cache reset to null.")
       isOpenedFilesSaved.set(true)
@@ -988,9 +1054,6 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
       }
 
       withContext(Dispatchers.Main) {
-        if (content.tabs.tabCount != files.size) {
-          log.warn("updateTabs: Mismatch between tab count (${content.tabs.tabCount}) and file count (${files.size}).")
-        }
         val countToUpdate = min(content.tabs.tabCount, files.size)
         for (i in 0 until countToUpdate) {
           val tab = content.tabs.getTabAt(i) ?: continue
@@ -998,8 +1061,6 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
           if (nameAndIcon != null) {
             tab.icon = ResourcesCompat.getDrawable(resources, nameAndIcon.second, theme)
             tab.text = nameAndIcon.first
-          } else {
-            log.warn("updateTabs: No name/icon info for tab at index $i")
           }
         }
       }

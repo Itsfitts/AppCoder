@@ -41,6 +41,22 @@ class MainActivity : EdgeToEdgeIDEActivity() {
 
     private lateinit var fileEditorResultLauncher: ActivityResultLauncher<Intent>
 
+    // Payload for launching AI editor routed from EditorHandlerActivity
+    private data class AiLaunchPayload(
+        val projectsRootOverride: String?,
+        val prefillName: String?,
+        val prefillDescription: String?,
+        val isAutoRetry: Boolean
+    )
+    private var pendingAiLaunchPayload: AiLaunchPayload? = null
+
+    // Keys used for routing Editor -> Main -> FileEditorActivity
+    companion object {
+        private const val TAG = "MainActivity"
+        private const val EXTRA_REQUEST_AI_EDITOR = "com.itsaky.androidide.REQUEST_AI_EDITOR"
+        private const val EXTRA_AI_PROJECTS_ROOT_OVERRIDE = "com.itsaky.androidide.AI_PROJECTS_ROOT_OVERRIDE"
+    }
+
     private val onBackPressedCallback = object : OnBackPressedCallback(true) {
         override fun handleOnBackPressed() {
             viewModel.apply {
@@ -77,7 +93,6 @@ class MainActivity : EdgeToEdgeIDEActivity() {
 
                 val projectPath = data.getStringExtra(FileEditorActivity.RESULT_EXTRA_PROJECT_PATH)
                 val wasAutoFixEnabled = data.getBooleanExtra(FileEditorActivity.EXTRA_ENABLE_AUTO_FIX, false)
-                // val initialDescription = data.getStringExtra(FileEditorActivity.EXTRA_INITIAL_APP_DESCRIPTION_FOR_AUTO_FIX) // Warning fixed: This was never used.
 
                 if (projectPath != null) {
                     Log.i(TAG, "FileEditorActivity finished successfully. Project path: $projectPath, Auto-Fix was Active: $wasAutoFixEnabled")
@@ -105,12 +120,42 @@ class MainActivity : EdgeToEdgeIDEActivity() {
         setupViewModelObservers()
         setupNavigation()
         setupLaunchAiEditorButton()
+
+        // Handle possible Editor->Main routing request on cold start
+        handleIntentToMaybeLaunchAi(intent)
+
         openLastProject()
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        handleIntentToMaybeLaunchAi(intent)
     }
 
     override fun bindLayout(): View {
         _binding = ActivityMainBinding.inflate(layoutInflater)
         return binding.root
+    }
+
+    private fun handleIntentToMaybeLaunchAi(incoming: Intent?) {
+        incoming ?: return
+        if (!incoming.getBooleanExtra(EXTRA_REQUEST_AI_EDITOR, false)) return
+
+        val payload = AiLaunchPayload(
+            projectsRootOverride = incoming.getStringExtra(EXTRA_AI_PROJECTS_ROOT_OVERRIDE),
+            prefillName = incoming.getStringExtra(FileEditorActivity.EXTRA_PREFILL_APP_NAME),
+            prefillDescription = incoming.getStringExtra(FileEditorActivity.EXTRA_PREFILL_APP_DESCRIPTION),
+            isAutoRetry = incoming.getBooleanExtra(FileEditorActivity.EXTRA_IS_AUTO_RETRY_ATTEMPT, false)
+        )
+        // Clear flags to avoid re-triggering if this intent lingers
+        incoming.removeExtra(EXTRA_REQUEST_AI_EDITOR)
+        incoming.removeExtra(EXTRA_AI_PROJECTS_ROOT_OVERRIDE)
+
+        if (!checkAndRequestStoragePermission()) {
+            pendingAiLaunchPayload = payload
+            return
+        }
+        launchFileEditorActivityInternal(payload)
     }
 
     private fun setupViewModelObservers() {
@@ -203,14 +248,12 @@ class MainActivity : EdgeToEdgeIDEActivity() {
             .show()
     }
 
-    // ERROR FIXED: Changed from 'private' to 'internal' so fragments can access it.
     internal fun openProject(root: File) {
         IProjectManager.getInstance().openProject(root)
         GeneralPreferences.lastOpenedProject = root.absolutePath
         startActivity(Intent(this, EditorActivityKt::class.java))
     }
 
-    // ERROR FIXED: Changed from 'private' to 'internal'
     internal fun openAndBuildProject(root: File) {
         IProjectManager.getInstance().openProject(root)
         GeneralPreferences.lastOpenedProject = root.absolutePath
@@ -234,7 +277,10 @@ class MainActivity : EdgeToEdgeIDEActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == STORAGE_PERMISSION_REQUEST_CODE) {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                launchFileEditorActivityInternal()
+                // If we were routing from Editor, use the pending payload
+                val payload = pendingAiLaunchPayload
+                pendingAiLaunchPayload = null
+                launchFileEditorActivityInternal(payload)
             } else {
                 Toast.makeText(this, R.string.msg_storage_permission_required, Toast.LENGTH_LONG).show()
             }
@@ -262,13 +308,20 @@ class MainActivity : EdgeToEdgeIDEActivity() {
 
     private fun launchFileEditorActivity() {
         if (!checkAndRequestStoragePermission()) return
-        launchFileEditorActivityInternal()
+        launchFileEditorActivityInternal(null)
     }
 
-    private fun launchFileEditorActivityInternal() {
-        val projectsRootPath = getAndroidIDEProjectsRootPath() ?: return
+    private fun launchFileEditorActivityInternal(payload: AiLaunchPayload?) {
+        val projectsRootPath = payload?.projectsRootOverride ?: getAndroidIDEProjectsRootPath() ?: return
         Log.d(TAG, "Launching FileEditorActivity with root: $projectsRootPath")
-        val intent = FileEditorActivity.newIntent(this, projectsRootPath)
+
+        val intent = FileEditorActivity.newIntent(this, projectsRootPath).apply {
+            payload?.prefillName?.let { putExtra(FileEditorActivity.EXTRA_PREFILL_APP_NAME, it) }
+            payload?.prefillDescription?.let { putExtra(FileEditorActivity.EXTRA_PREFILL_APP_DESCRIPTION, it) }
+            if (payload?.isAutoRetry == true) {
+                putExtra(FileEditorActivity.EXTRA_IS_AUTO_RETRY_ATTEMPT, true)
+            }
+        }
         fileEditorResultLauncher.launch(intent)
     }
 
@@ -276,9 +329,5 @@ class MainActivity : EdgeToEdgeIDEActivity() {
         super.onDestroy()
         ITemplateProvider.getInstance().release()
         _binding = null
-    }
-
-    companion object {
-        private const val TAG = "MainActivity"
     }
 }

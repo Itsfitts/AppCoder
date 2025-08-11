@@ -38,24 +38,26 @@ Simply describe your app vision, and AppCoder handles the code generation.
 
 * AppCoder uses Gemini 2.5 Pro with the thinking budget maximized as the default. This free model can generate simple apps like a to-do list, tic-tac-toe, or even a Tetris game. The 2.5 Pro model is completly free and one of the best choices for all kind of programming tasks. 
 
-* A snake game is around the complexity that works well zero shot. More complex apps you moght need to build step by step.
+* A snake game is around the complexity that works well zero shot. More complex apps likely require you to build up the app step by step one feature at a time.
 
-* You currently get free Gemini API keys with each Google account so if you simply create Google accounts you could get a differnt api key with generous token limits. Not sure how long Google can keep this up with all other providers charging around 10$ for 1 Million output tokens.
+* You currently get a free Gemini API key with each Google account. It is possible to create multiple Google accounts to get multiple api keys each with generous token limits. Not sure how long Google can keep this up with all other providers charging around 10$ for 1 Million output tokens but right now there is no limit.
 
-* You also have the option to choose GPT-5 in the dropdown menu. While it allows for slightly more complex apps, it is not free and requires a billing account. It takes Gemini 2.5 Pro about 3 minutes to generate a snake game code which is rather slow compared to about 20 seconds with 2.5 Flash. 
+* You also have the option to choose GPT-5 in the dropdown menu. While it might allows for a slightly less buggy build, it is not free and requires a billing account.
 
-GPT-5 is the best model available currently but generating a single snake app costs around $0.30. I would not recommend it becuase this app is also not perfectly optimised to reduce expensive tokens. For example when you choose this model even tasks that could be done with a cheaper model will be done by the expensive GPT-5 model.
+* It takes Gemini 2.5 Pro about 3 minutes to generate a snake game code which is rather slow compared to about 20 seconds with 2.5 Flash. 
 
-* In my testing I saw the best performance using Gemini 2.5 Pro, GPT-5, GPT-5 Mini and Claude Sonnet 4 with or without artifacts enabled. In the Anthropic app, you can itterate on your app idea quickly using HTML in the browser first. Once you're done itterating on your app idea, you can ask Claude to translate the HTML into Android code, then paste that code into AppCoder.
+* GPT-5 is the best model available currently but generating a single snake app costs around $0.30. I would not recommend it becuase this app is also not perfectly optimized yet to reduce expensive tokens. For example even tasks that could be done with a cheaper model will be done by the expensive GPT-5 model if you choose it from the dropdown menu.
 
-* If the app is too complex, even the most advanced LLMs will generate unusable code, fail to build, crash on install, or contain major bugs. A bit of trial and error is needed still. To give you an example. I tried the following Prompt with 2.5 Pro:
+* In my testing I saw the best performance using Gemini 2.5 Pro, GPT-5, GPT-5 Mini and Claude Sonnet 4. In the Anthropic app, you can itterate on your app idea quickly using HTML in the browser first. Once you're done itterating on your app idea, you can paste that code into AppCoder to make an android app from it. This might be the quickest way if you do the itterating work in HTML in the browser instead of waiting for the app to build and than itteration by building new apps.
+
+* If the app is too complex, even the most advanced LLMs will generate unusable code, fail to build, crash on install, or contain major bugs. To give you an example. I tried the following Prompt with 2.5 Pro:
 > *"Create an app that shows me a list of the latest news from reddit using the r/science subreddit. The app should also contain a filter to filter out topics one doesn't like. The filter stores a list of words and when they appear in the title those news are not displayed. The app checks new entries when opened but keeps already loaded links in cash. Pressing the title of an article in the app loads the reddit article."*
 
   Even with the 2.5 pro model and many itterations passing back the error the build failed all the time. I therefore switched to a simpler prompt:
 
 > *"Create an app that shows me a list of the latest news from reddit using the r/science subreddit. Just list them on the main screen using the reddit api."*
 
-  And now I only had to do 2 itterations passing build errors back to the LLM to end up with a working app showing me the news in a list.
+  And now I only had to do 2 itterations passing build errors back to the LLM to end up with a working app showing me the news in a list. From this state you can slowly add features checking the reults in a test-build-cycle.
 
 * The first build takes about 10 minutes. Follow-up builds typically take ~60 seconds on modern phones, from description to installation.
 
@@ -109,5 +111,6 @@ AndroidIDE is distributed in the hope that it will be useful, but WITHOUT ANY WA
 
 You should have received a copy of the GNU General Public License along with AndroidIDE. If not, see <https://www.gnu.org/licenses/>.
 ```
+
 
 

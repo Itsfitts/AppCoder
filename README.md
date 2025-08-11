@@ -38,7 +38,9 @@ Simply describe your app vision, and AppCoder handles the code generation.
 
 * AppCoder uses Gemini 2.5 Pro with the thinking budget maximized as the default. This free model can generate simple apps like a to-do list, tic-tac-toe, or even a Tetris game. The 2.5 Pro model is completly free and one of the best choices for all kind of programming tasks. 
 
-* A snake game is near the complexity limit. It may work on the first try or may require multiple iterations, using the previous build's error messages for correction in each iteration.
+* A snake game is around the complexity that works well zero shot. More complex apps you moght need to build step by step.
+
+* You currently get free Gemini API keys with each Google account so if you simply create Google accounts you could get a differnt api key with generous token limits. Not sure how long Google can keep this up with all other providers charging around 10$ for 1 Million output tokens.
 
 * You also have the option to choose GPT-5 in the dropdown menu. While it allows for slightly more complex apps, it is not free and requires a billing account. It takes Gemini 2.5 Pro about 3 minutes to generate a snake game code which is rather slow compared to about 20 seconds with 2.5 Flash. 
 
@@ -107,4 +109,5 @@ AndroidIDE is distributed in the hope that it will be useful, but WITHOUT ANY WA
 
 You should have received a copy of the GNU General Public License along with AndroidIDE. If not, see <https://www.gnu.org/licenses/>.
 ```
+
 

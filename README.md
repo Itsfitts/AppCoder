@@ -13,7 +13,7 @@
     *   Download `app-arm64-v8a-release.apk` or another .apk according to your device type.
 
 2.  **🔑 Get Your Free Gemini API Key:**
-    *   AppCoder needs a Gemini API key to generate code automatically.
+    *   AppCoder needs a free Gemini API key to generate code automatically.
     *   Visit Google AI Studio: [https://aistudio.google.com/apikey](https://aistudio.google.com/apikey)
     *   Sign in and click "Create API key". Copy this key ideally to your phones clipboard.
 
@@ -24,7 +24,7 @@
 
 ## 💡 What is AppCoder?
 
-AppCoder transforms your plain English descriptions into working app code using advanced LLMs like **Google's Gemini 2.5 Flash Preview**. 
+AppCoder transforms your plain English descriptions into working app code using advanced LLMs like **Google's Gemini 2.5 Pro** and **OpenAIs GPT-5 (ChatGPT)**. 
 
 Simply describe your app vision, and AppCoder handles the code generation.
 
@@ -36,15 +36,17 @@ Simply describe your app vision, and AppCoder handles the code generation.
 
 * Currently, the limiting factor determining how complex the app can be is the LLM running in the background and the inability of the current AppCoder version to observe the running app and use the logs to fix issues. Both limitations are actively worked on.
 
-* AppCoder uses Gemini 2.5 Flash with the thinking budget maximized as the default. This free model can generate simple apps like a to-do list, tic-tac-toe, or even a Tetris game. The Flash model is completly free and a good choice for this free open-source project. 
+* AppCoder uses Gemini 2.5 Pro with the thinking budget maximized as the default. This free model can generate simple apps like a to-do list, tic-tac-toe, or even a Tetris game. The 2.5 Pro model is completly free and one of the best choices for all kind of programming tasks. 
 
 * A snake game is near the complexity limit. It may work on the first try or may require multiple iterations, using the previous build's error messages for correction in each iteration.
 
-* You also have the option to choose Gemini 2.5 Pro in the dropdown menu. While it allows for more complex apps, it is not free and requires a Google Cloud billing account. It takes Gemini 2.5 Pro about 3 minutes to generate a snake game code which is very slow compared to about 20 seconds with 2.5 Flash. Even with Pro, multiple iterations might be needed, and generating a single snake app costs around $0.30 in cloud usage.
+* You also have the option to choose GPT-5 in the dropdown menu. While it allows for slightly more complex apps, it is not free and requires a billing account. It takes Gemini 2.5 Pro about 3 minutes to generate a snake game code which is rather slow compared to about 20 seconds with 2.5 Flash. 
 
-* In my testing I saw the best performance using Gemini 2.5 Pro, DeepSeek R1 and Claude Sonnet 4 with or without artifacts enabled. In the Anthropic app, you can itterate on your app idea quickly using HTML in the browser first. Once you're done itterating on your app idea, you can ask Claude to translate the HTML into Android code, then paste that code into AppCoder. Gemini 2.5 Flash can usually generate a working Android app from the Claude code copied in the app description input field. DeepSeek R1 has currently the lowest API cost and sould be the cheapest option for AppCoder. AppCoder currently only allows you to switch to Gemini 2.5 Pro if you need more capable apps but Support for other models like Deepseek R1 is planned.
+GPT-5 is the best model available currently but generating a single snake app costs around $0.30. I would not recommend it becuase this app is also not perfectly optimised to reduce expensive tokens. For example when you choose this model even tasks that could be done with a cheaper model will be done by the expensive GPT-5 model.
 
-* If the app is too complex, even the most advanced LLMs will generate unusable code, fail to build, crash on install, or contain major bugs. A bit a trial and error is needed still. To give you an example. I tried the following Prompt first with 2.5 Flash and then with 2.5 Pro:
+* In my testing I saw the best performance using Gemini 2.5 Pro, GPT-5, GPT-5 Mini and Claude Sonnet 4 with or without artifacts enabled. In the Anthropic app, you can itterate on your app idea quickly using HTML in the browser first. Once you're done itterating on your app idea, you can ask Claude to translate the HTML into Android code, then paste that code into AppCoder.
+
+* If the app is too complex, even the most advanced LLMs will generate unusable code, fail to build, crash on install, or contain major bugs. A bit of trial and error is needed still. To give you an example. I tried the following Prompt with 2.5 Pro:
 > *"Create an app that shows me a list of the latest news from reddit using the r/science subreddit. The app should also contain a filter to filter out topics one doesn't like. The filter stores a list of words and when they appear in the title those news are not displayed. The app checks new entries when opened but keeps already loaded links in cash. Pressing the title of an article in the app loads the reddit article."*
 
   Even with the 2.5 pro model and many itterations passing back the error the build failed all the time. I therefore switched to a simpler prompt:
@@ -105,3 +107,4 @@ AndroidIDE is distributed in the hope that it will be useful, but WITHOUT ANY WA
 
 You should have received a copy of the GNU General Public License along with AndroidIDE. If not, see <https://www.gnu.org/licenses/>.
 ```
+

@@ -1,11 +1,8 @@
-// GeminiWorkflowCoordinator.kt
 package com.itsaky.androidide.dialogs
 
 import android.util.Log
-import com.itsaky.androidide.services.AiForegroundService
 import org.json.JSONArray
 import org.json.JSONException
-import org.json.JSONObject
 import java.io.File
 import java.io.FileReader
 import java.io.IOException
@@ -15,7 +12,9 @@ import kotlin.math.max
 class GeminiWorkflowCoordinator(
     private val geminiHelper: GeminiHelper,
     private val directLogAppender: (String) -> Unit,
-    private val bridge: ViewModelFileEditorBridge
+    private val bridge: ViewModelFileEditorBridge,
+    private val serviceManager: AiServiceManager,
+    private val fileScanner: ProjectFileScanner // <-- Final dependency added
 ) {
     companion object {
         private const val TAG = "AiWorkflow"
@@ -101,7 +100,8 @@ class GeminiWorkflowCoordinator(
         lastAppNameForFallback = appName
         lastAppDescriptionForFallback = appDescription
 
-        AiForegroundService.start(bridge.getContextBridge(), "Generating code for $appName")
+        // CORRECTED: Call the service via the interface
+        serviceManager.startService(bridge.getContextBridge(), "Generating code for $appName")
 
         bridge.updateStateBridge(AiWorkflowState.SELECTING_FILES)
         identifyFilesToModify(appName, appDescription, projectDir)
@@ -109,7 +109,8 @@ class GeminiWorkflowCoordinator(
 
     private fun identifyFilesToModify(appName: String, appDescription: String, projectDir: File) {
         logViaBridge("AI Workflow Step: Identifying files to modify/create...\n")
-        val files = ProjectFileUtils.scanProjectFiles(projectDir)
+        // CORRECTED: Use the fileScanner interface instead of the static class
+        val files = fileScanner.scanProjectFiles(projectDir)
 
         bridge.runOnUiThreadBridge {
             if (files.isEmpty() && !bridge.isModifyingExistingProjectBridge) {
@@ -118,7 +119,8 @@ class GeminiWorkflowCoordinator(
                     "No code files found in the newly created project template. Cannot proceed.",
                     null
                 )
-                AiForegroundService.stop(bridge.getContextBridge())
+                // CORRECTED: Call the service via the interface
+                serviceManager.stopService(bridge.getContextBridge())
                 return@runOnUiThreadBridge
             } else if (files.isEmpty() && bridge.isModifyingExistingProjectBridge) {
                 logViaBridge("No existing code files found by scanner in '$appName'. AI will be prompted to create necessary files.\n")
@@ -233,7 +235,8 @@ class GeminiWorkflowCoordinator(
                         else -> "Unexpected error during file selection: ${e.message}"
                     }
                     bridge.handleErrorBridge(errorMessage, e)
-                    AiForegroundService.stop(bridge.getContextBridge())
+                    // CORRECTED: Call the service via the interface
+                    serviceManager.stopService(bridge.getContextBridge())
                 }
             },
             responseMimeTypeOverride = "application/json"
@@ -244,7 +247,8 @@ class GeminiWorkflowCoordinator(
         val projectDir = bridge.currentProjectDirBridge ?: run {
             encounteredError = true
             bridge.handleErrorBridge("Project directory is null before batching generation.", null)
-            AiForegroundService.stop(bridge.getContextBridge())
+            // CORRECTED: Call the service via the interface
+            serviceManager.stopService(bridge.getContextBridge())
             return
         }
 
@@ -286,10 +290,13 @@ class GeminiWorkflowCoordinator(
         val projectDir = bridge.currentProjectDirBridge ?: run {
             encounteredError = true
             bridge.handleErrorBridge("Project directory is null before initial generation.", null)
-            AiForegroundService.stop(bridge.getContextBridge())
+            // CORRECTED: Call the service via the interface
+            serviceManager.stopService(bridge.getContextBridge())
             return
         }
-        val existingFiles = ProjectFileUtils.scanProjectFiles(projectDir)
+
+        // CORRECTED: Use the fileScanner interface instead of the static class
+        val existingFiles = fileScanner.scanProjectFiles(projectDir)
         val existingListText = if (existingFiles.isNotEmpty()) {
             existingFiles.joinToString("\n") { "- $it" }
         } else {
@@ -334,13 +341,15 @@ class GeminiWorkflowCoordinator(
                         } else {
                             encounteredError = true
                             bridge.handleErrorBridge("AI did not produce any files to write after retries.", null)
-                            AiForegroundService.stop(bridge.getContextBridge())
+                            // CORRECTED: Call the service via the interface
+                            serviceManager.stopService(bridge.getContextBridge())
                         }
                     }
                 } catch (e: Exception) {
                     encounteredError = true
                     bridge.handleErrorBridge("Error during initial file generation: ${e.message}", e)
-                    AiForegroundService.stop(bridge.getContextBridge())
+                    // CORRECTED: Call the service via the interface
+                    serviceManager.stopService(bridge.getContextBridge())
                 }
             },
             responseSchemaJson = geminiHelper.getMinimalFilesSchema(),
@@ -611,7 +620,8 @@ class GeminiWorkflowCoordinator(
         val projectDir = bridge.currentProjectDirBridge ?: run {
             encounteredError = true
             bridge.handleErrorBridge("Project directory is null before applying changes.", null)
-            AiForegroundService.stop(bridge.getContextBridge())
+            // CORRECTED: Call the service via the interface
+            serviceManager.stopService(bridge.getContextBridge())
             return
         }
 
@@ -757,7 +767,8 @@ class GeminiWorkflowCoordinator(
         val projectDir = bridge.currentProjectDirBridge
         val okToAutoBuild = !encounteredError && anyChangesApplied && projectDir != null
 
-        AiForegroundService.stop(bridge.getContextBridge())
+        // CORRECTED: Call the service via the interface
+        serviceManager.stopService(bridge.getContextBridge())
 
         if (autoBuildAfterApply && okToAutoBuild && !hasTriggeredAutoBuild) {
             hasTriggeredAutoBuild = true

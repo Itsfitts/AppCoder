@@ -170,4 +170,27 @@ dependencies {
 
   // for the llm integration with gemini
   implementation("com.squareup.okhttp3:okhttp:4.10.0")
+
+  // This is to build the tooling-api-impl project before the app is built
+  // So we always copy the latest JAR file to assets
+  compileOnly(projects.tooling.impl)
+
+  // This line was already here - It provides JUnit
+  testImplementation(projects.testing.unitTest)
+
+  testImplementation("org.mockito:mockito-core:4.5.1")
+  testImplementation("org.mockito.kotlin:mockito-kotlin:4.0.0")
+
+  testImplementation("org.mockito:mockito-inline:4.5.1")
+
+  androidTestImplementation(projects.testing.androidTest)
+
+  // for the llm integration with gemini
+  implementation("com.squareup.okhttp3:okhttp:4.10.0")
+
+  testImplementation(projects.testing.unitTest)
+
+  // --- ADD THIS NEW LINE FOR A REAL JSON LIBRARY IN TESTS ---
+  testImplementation("org.json:json:20231013")
+  // --- END OF NEW LINE ---
 }

@@ -113,7 +113,6 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
             appendToViewModelLog("✅ Base project template created (via bridge): ${projectDir.absolutePath}\n")
             if (currentApiKeyForWorkflow.isNotBlank()) {
                 val enhancedPrompt = buildGenerationPrompt(appName, appDescription)
-                // Start AI flow with auto-build + auto-run flags
                 geminiWorkflowCoordinator.startModificationFlow(
                     appName = appName,
                     appDescription = enhancedPrompt,
@@ -127,11 +126,9 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    // NEW: implement the build trigger so the workflow can auto-continue after AI conclusion
     override fun triggerBuildBridge(projectDir: File, runAfterBuild: Boolean) {
         runOnMainThread {
             try {
-                // Open project and start Editor with auto-build.
                 com.itsaky.androidide.projects.IProjectManager.getInstance().openProject(projectDir)
                 com.itsaky.androidide.preferences.internal.GeneralPreferences.lastOpenedProject = projectDir.absolutePath
 
@@ -141,9 +138,6 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
                     com.itsaky.androidide.activities.editor.EditorActivityKt::class.java
                 ).apply {
                     putExtra(com.itsaky.androidide.activities.editor.EditorActivityKt.EXTRA_AUTO_BUILD_PROJECT, true)
-                    // If EditorActivity supports an extra to auto-run after build, pass it here.
-                    // Otherwise, it will respect user preference (idepref_launchAppAfterInstall).
-                    // putExtra(EditorActivityKt.EXTRA_AUTO_RUN_AFTER_BUILD, runAfterBuild)
                     addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 appCtx.startActivity(intent)
@@ -171,11 +165,14 @@ class FileEditorViewModel(application: Application) : AndroidViewModel(applicati
         )
     }
 
+    // --- FINAL CORRECTED INITIALIZATION ---
     private val geminiWorkflowCoordinator: GeminiWorkflowCoordinator by lazy {
         GeminiWorkflowCoordinator(
             geminiHelper = geminiHelper,
             directLogAppender = { msg -> appendToLogBridge(msg) },
-            bridge = this
+            bridge = this,
+            serviceManager = DefaultAiServiceManager(),
+            fileScanner = DefaultProjectFileScanner()
         )
     }
 

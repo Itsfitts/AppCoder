@@ -13,7 +13,7 @@
     *   Download `app-arm64-v8a-release.apk` or another .apk according to your device type.
 
 2.  **🔑 Get Your Free Gemini API Key:**
-    *   AppCoder needs a Gemini API key to generate code automatically.
+    *   AppCoder needs a free Gemini API key to generate code automatically.
     *   Visit Google AI Studio: [https://aistudio.google.com/apikey](https://aistudio.google.com/apikey)
     *   Sign in and click "Create API key". Copy this key ideally to your phones clipboard.
 
@@ -24,7 +24,7 @@
 
 ## 💡 What is AppCoder?
 
-AppCoder transforms your plain English descriptions into working app code using advanced LLMs like **Google's Gemini 2.5 Flash Preview**. 
+AppCoder transforms your plain English descriptions into working app code using advanced LLMs like **Google's Gemini 2.5 Pro** and **OpenAIs GPT-5 (ChatGPT)**. 
 
 Simply describe your app vision, and AppCoder handles the code generation.
 
@@ -36,22 +36,28 @@ Simply describe your app vision, and AppCoder handles the code generation.
 
 * Currently, the limiting factor determining how complex the app can be is the LLM running in the background and the inability of the current AppCoder version to observe the running app and use the logs to fix issues. Both limitations are actively worked on.
 
-* AppCoder uses Gemini 2.5 Flash with the thinking budget maximized as the default. This free model can generate simple apps like a to-do list, tic-tac-toe, or even a Tetris game. The Flash model is completly free and a good choice for this free open-source project. 
+* AppCoder uses Gemini 2.5 Pro with the thinking budget maximized as the default. This free model can generate simple apps like a to-do list, tic-tac-toe, or even a Tetris game. The 2.5 Pro model is completly free and one of the best choices for all kind of programming tasks. 
 
-* A snake game is near the complexity limit. It may work on the first try or may require multiple iterations, using the previous build's error messages for correction in each iteration.
+* A snake game is around the complexity that works well zero shot. More complex apps likely require you to build up the app step by step one feature at a time.
 
-* You also have the option to choose Gemini 2.5 Pro in the dropdown menu. While it allows for more complex apps, it is not free and requires a Google Cloud billing account. It takes Gemini 2.5 Pro about 3 minutes to generate a snake game code which is very slow compared to about 20 seconds with 2.5 Flash. Even with Pro, multiple iterations might be needed, and generating a single snake app costs around $0.30 in cloud usage.
+* You currently get a free Gemini API key with each Google account. It is possible to create multiple Google accounts to get multiple api keys each with generous token limits. Not sure how long Google can keep this up with all other providers charging around 10$ for 1 Million output tokens but right now there is no limit.
 
-* In my testing I saw the best performance using Gemini 2.5 Pro, DeepSeek R1 and Claude Sonnet 4 with or without artifacts enabled. In the Anthropic app, you can itterate on your app idea quickly using HTML in the browser first. Once you're done itterating on your app idea, you can ask Claude to translate the HTML into Android code, then paste that code into AppCoder. Gemini 2.5 Flash can usually generate a working Android app from the Claude code copied in the app description input field. DeepSeek R1 has currently the lowest API cost and sould be the cheapest option for AppCoder. AppCoder currently only allows you to switch to Gemini 2.5 Pro if you need more capable apps but Support for other models like Deepseek R1 is planned.
+* You also have the option to choose GPT-5 in the dropdown menu. While it might allows for a slightly less buggy build, it is not free and requires a billing account.
 
-* If the app is too complex, even the most advanced LLMs will generate unusable code, fail to build, crash on install, or contain major bugs. A bit a trial and error is needed still. To give you an example. I tried the following Prompt first with 2.5 Flash and then with 2.5 Pro:
+* It takes Gemini 2.5 Pro about 3 minutes to generate a snake game code which is rather slow compared to about 20 seconds with 2.5 Flash. 
+
+* GPT-5 is the best model available currently but generating a single snake app costs around $0.30. I would not recommend it becuase this app is also not perfectly optimized yet to reduce expensive tokens. For example even tasks that could be done with a cheaper model will be done by the expensive GPT-5 model if you choose it from the dropdown menu.
+
+* In my testing I saw the best performance using Gemini 2.5 Pro, GPT-5, GPT-5 Mini and Claude Sonnet 4. In the Anthropic app, you can itterate on your app idea quickly using HTML in the browser first. Once you're done itterating on your app idea, you can paste that code into AppCoder to make an android app from it. This might be the quickest way if you do the itterating work in HTML in the browser instead of waiting for the app to build and than itteration by building new apps.
+
+* If the app is too complex, even the most advanced LLMs will generate unusable code, fail to build, crash on install, or contain major bugs. To give you an example. I tried the following Prompt with 2.5 Pro:
 > *"Create an app that shows me a list of the latest news from reddit using the r/science subreddit. The app should also contain a filter to filter out topics one doesn't like. The filter stores a list of words and when they appear in the title those news are not displayed. The app checks new entries when opened but keeps already loaded links in cash. Pressing the title of an article in the app loads the reddit article."*
 
   Even with the 2.5 pro model and many itterations passing back the error the build failed all the time. I therefore switched to a simpler prompt:
 
 > *"Create an app that shows me a list of the latest news from reddit using the r/science subreddit. Just list them on the main screen using the reddit api."*
 
-  And now I only had to do 2 itterations passing build errors back to the LLM to end up with a working app showing me the news in a list.
+  And now I only had to do 2 itterations passing build errors back to the LLM to end up with a working app showing me the news in a list. From this state you can slowly add features checking the reults in a test-build-cycle.
 
 * The first build takes about 10 minutes. Follow-up builds typically take ~60 seconds on modern phones, from description to installation.
 
@@ -68,11 +74,11 @@ In contrast programming helpers, no-code tools receive less attention, likely du
 The focus of the AppCoder project is to targets these non-programmers. Coding directly on a phone is not ideal when direct in line code modification is required so professional developers will likely use a standard IDE instead. A desktop IDE is generally more powerful and flexible, but a phone-based IDE offers ease of use and combined with an LLM that handles the coding, quickly building apps on mobile devices becomes possible.
 
 ### 📱 Alternative App Creation Tools
-*  **[Kiki.dev former Appacella](https://www.kiki.dev/)** is a commercial non-open source app for coding apps. It has 30 free itterations a month and 5 per day. The model seems less advanced than the gemini 2.5 flash model used in this project. Build time is fast and similar to this project. It uses an additional [Expo Go App](https://play.google.com/store/apps/details?id=host.exp.exponent)** to transfear the build app to your phone.
-*  **[Rork](https://rork.com)** is a commercial non-open source app for coding apps. It has 7 free itterations per day and you will likely need all of them just to build one simple tetris game. The model they use seems less advanced than the gemini 2.5 flash model used in this project. Build time is fast and similar to this project. It uses an additional [Expo Go App](https://play.google.com/store/apps/details?id=host.exp.exponent)** to transfear the build app to your phone.
+*  **[Kiki.dev former Appacella](https://www.kiki.dev/)** is a commercial non-open source app for coding apps. It has 30 free itterations a month and 5 per day. Build time is fast and similar to this project. It uses an additional [Expo Go App](https://play.google.com/store/apps/details?id=host.exp.exponent)** to transfear the build app to your phone. Quality was nat as good during my testing but they could easily upgrade to GPT-5. But they very likely host their own models to save cost.
+*  **[Rork](https://rork.com)** is a commercial non-open source app for coding apps. It has 7 free itterations per day and you will likely need all of them to build one simple tetris game. Build time is fast and similar to this project. It uses an additional [Expo Go App](https://play.google.com/store/apps/details?id=host.exp.exponent)** to transfear the build app to your phone.
 
-### 💻 Alternative Full IDEs or Software (mostly focused on programmers) 
-* [Cursor](https://www.cursor.com/), [Windsurf](https://windsurf.com/editor) (bought by OpenAI), [Github Copiliot inside VS](https://github.com/features/copilot) (free for students), [Cline](https://cline.bot/), [Trae](https://www.trae.ai/), [Claude Code](https://www.anthropic.com/claude-code), [Augment Code](https://www.augmentcode.com/), [Roocode](https://github.com/RooCodeInc/Roo-Code), [Void](https://voideditor.com/), [Zed AI](https://zed.dev/ai), [Aider](https://aider.chat/), [Lovable](https://lovable.dev/), [bolt](https://bolt.new/), [Firebase Studio](https://firebase.studio/), [Manus](https://manus.im/guest), [Junie](https://jb.gg/try_junie​), [LocalSite-ai](https://github.com/weise25/LocalSite-ai)
+### 💻 Alternative Full IDEs or Software (mostly focused on programmers, some at casual users too) 
+* [Cursor](https://www.cursor.com/), [Windsurf](https://windsurf.com/editor), [Github Copiliot inside VS](https://github.com/features/copilot) (free for students), [Cline](https://cline.bot/), [Trae](https://www.trae.ai/), [Claude Code](https://www.anthropic.com/claude-code), [Augment Code](https://www.augmentcode.com/), [Roocode](https://github.com/RooCodeInc/Roo-Code), [Void](https://voideditor.com/), [Zed AI](https://zed.dev/ai), [Aider](https://aider.chat/), [Lovable](https://lovable.dev/), [bolt](https://bolt.new/), [Firebase Studio](https://firebase.studio/), [Manus](https://manus.im/guest), [Junie](https://jb.gg/try_junie​), [LocalSite-ai](https://github.com/weise25/LocalSite-ai), [base44](https://base44.com/), [AugmentCode](https://www.augmentcode.com/)
 
 ---
 
@@ -105,3 +111,10 @@ AndroidIDE is distributed in the hope that it will be useful, but WITHOUT ANY WA
 
 You should have received a copy of the GNU General Public License along with AndroidIDE. If not, see <https://www.gnu.org/licenses/>.
 ```
+
+
+
+
+
+
+

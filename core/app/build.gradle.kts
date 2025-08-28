@@ -71,10 +71,12 @@ desugaring {
 
 dependencies {
   debugImplementation(libs.common.leakcanary)
-// Annotation processors
+
+  // Annotation processors
   kapt(libs.common.glide.ap)
   kapt(libs.google.auto.service)
   kapt(projects.annotation.processors)
+
   implementation(libs.common.editor)
   implementation(libs.common.utilcode)
   implementation(libs.common.glide)
@@ -85,12 +87,15 @@ dependencies {
   implementation(libs.common.charts)
   implementation(libs.common.hiddenApiBypass)
   implementation(libs.aapt2.common)
+
   implementation(libs.google.auto.service.annotations)
   implementation(libs.google.gson)
   implementation(libs.google.guava)
-// Git
+
+  // Git
   implementation(libs.git.jgit)
-// AndroidX
+
+  // AndroidX
   implementation(libs.androidx.splashscreen)
   implementation(libs.androidx.annotation)
   implementation(libs.androidx.appcompat)
@@ -110,14 +115,17 @@ dependencies {
   implementation(libs.androidx.work.ktx)
   implementation(libs.google.material)
   implementation(libs.google.flexbox)
-// Kotlin
+
+  // Kotlin
   implementation(libs.androidx.core.ktx)
   implementation(libs.common.kotlin)
-// Dependencies in composite build
+
+  // Dependencies in composite build
   implementation(libs.composite.appintro)
   implementation(libs.composite.desugaringCore)
   implementation(libs.composite.javapoet)
-// Local projects here
+
+  // Local projects here
   implementation(projects.core.actions)
   implementation(projects.core.common)
   implementation(projects.core.indexingApi)
@@ -150,15 +158,24 @@ dependencies {
   implementation(projects.xml.aaptcompiler)
   implementation(projects.xml.lsp)
   implementation(projects.xml.utils)
-// This is to build the tooling-api-impl project before the app is built
-// So we always copy the latest JAR file to assets
+
+  // This is to build the tooling-api-impl project before the app is built
+  // So we always copy the latest JAR file to assets
   compileOnly(projects.tooling.impl)
-// For the LLM integration with Gemini
+
+  // For the LLM integration with Gemini
   implementation("com.squareup.okhttp3:okhttp:4.10.0")
-// --- SIMPLIFIED TESTING DEPENDENCIES ---
-// Base test dependencies from your project
+
+
+  // --- TESTING DEPENDENCIES ---
+
+  // Base test dependencies from your project
   testImplementation(projects.testing.unitTest)
   androidTestImplementation(projects.testing.androidTest)
-// Required for unit tests to use JSONObject
+
+  // ADDED: MockK, a modern mocking library for Kotlin.
+  testImplementation("io.mockk:mockk:1.13.10")
+
+  // Required for unit tests to use JSONObject
   testImplementation("org.json:json:20231013")
 }

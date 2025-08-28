@@ -42,8 +42,12 @@ buildscript {
   dependencies {
     classpath(libs.kotlin.gradle.plugin)
     classpath(libs.nav.safe.args.gradle.plugin)
+    // ADDED: Classpath for the Realm plugin
+    classpath("io.realm:realm-gradle-plugin:10.15.1")
   }
 }
+
+// The 'allprojects' block has been REMOVED from here and moved to settings.gradle.kts
 
 // Root project has 'com.itsaky.androidide' as the group ID
 project.group = BuildConfig.packageName

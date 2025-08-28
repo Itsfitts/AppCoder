@@ -1,5 +1,3 @@
-// build.gradle.kts (your module-level file)
-
 @file:Suppress("UnstableApiUsage")
 
 import com.itsaky.androidide.build.config.BuildConfig
@@ -36,7 +34,7 @@ android {
   }
 
   buildFeatures {
-    viewBinding = true // CORRECTED LINE
+    viewBinding = true
   }
 
   androidResources {
@@ -53,7 +51,7 @@ android {
     abortOnError = false
     disable.addAll(arrayOf("VectorPath", "NestedWeights", "ContentDescription", "SmallSp"))
   }
-} // This should now be the correct line 55 or around there depending on exact editor line numbering
+}
 
 kapt {
   arguments {
@@ -73,12 +71,10 @@ desugaring {
 
 dependencies {
   debugImplementation(libs.common.leakcanary)
-
-  // Annotation processors
+// Annotation processors
   kapt(libs.common.glide.ap)
   kapt(libs.google.auto.service)
   kapt(projects.annotation.processors)
-
   implementation(libs.common.editor)
   implementation(libs.common.utilcode)
   implementation(libs.common.glide)
@@ -89,15 +85,12 @@ dependencies {
   implementation(libs.common.charts)
   implementation(libs.common.hiddenApiBypass)
   implementation(libs.aapt2.common)
-
   implementation(libs.google.auto.service.annotations)
   implementation(libs.google.gson)
   implementation(libs.google.guava)
-
-  // Git
+// Git
   implementation(libs.git.jgit)
-
-  // AndroidX
+// AndroidX
   implementation(libs.androidx.splashscreen)
   implementation(libs.androidx.annotation)
   implementation(libs.androidx.appcompat)
@@ -117,17 +110,14 @@ dependencies {
   implementation(libs.androidx.work.ktx)
   implementation(libs.google.material)
   implementation(libs.google.flexbox)
-
-  // Kotlin
+// Kotlin
   implementation(libs.androidx.core.ktx)
   implementation(libs.common.kotlin)
-
-  // Dependencies in composite build
+// Dependencies in composite build
   implementation(libs.composite.appintro)
   implementation(libs.composite.desugaringCore)
   implementation(libs.composite.javapoet)
-
-  // Local projects here
+// Local projects here
   implementation(projects.core.actions)
   implementation(projects.core.common)
   implementation(projects.core.indexingApi)
@@ -160,37 +150,15 @@ dependencies {
   implementation(projects.xml.aaptcompiler)
   implementation(projects.xml.lsp)
   implementation(projects.xml.utils)
-
-  // This is to build the tooling-api-impl project before the app is built
-  // So we always copy the latest JAR file to assets
+// This is to build the tooling-api-impl project before the app is built
+// So we always copy the latest JAR file to assets
   compileOnly(projects.tooling.impl)
-
+// For the LLM integration with Gemini
+  implementation("com.squareup.okhttp3:okhttp:4.10.0")
+// --- SIMPLIFIED TESTING DEPENDENCIES ---
+// Base test dependencies from your project
   testImplementation(projects.testing.unitTest)
   androidTestImplementation(projects.testing.androidTest)
-
-  // for the llm integration with gemini
-  implementation("com.squareup.okhttp3:okhttp:4.10.0")
-
-  // This is to build the tooling-api-impl project before the app is built
-  // So we always copy the latest JAR file to assets
-  compileOnly(projects.tooling.impl)
-
-  // This line was already here - It provides JUnit
-  testImplementation(projects.testing.unitTest)
-
-  testImplementation("org.mockito:mockito-core:4.5.1")
-  testImplementation("org.mockito.kotlin:mockito-kotlin:4.0.0")
-
-  testImplementation("org.mockito:mockito-inline:4.5.1")
-
-  androidTestImplementation(projects.testing.androidTest)
-
-  // for the llm integration with gemini
-  implementation("com.squareup.okhttp3:okhttp:4.10.0")
-
-  testImplementation(projects.testing.unitTest)
-
-  // --- ADD THIS NEW LINE FOR A REAL JSON LIBRARY IN TESTS ---
+// Required for unit tests to use JSONObject
   testImplementation("org.json:json:20231013")
-  // --- END OF NEW LINE ---
 }

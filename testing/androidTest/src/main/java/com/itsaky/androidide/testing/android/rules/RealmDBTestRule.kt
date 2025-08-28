@@ -17,45 +17,60 @@
 
 package com.itsaky.androidide.testing.android.rules
 
-import com.itsaky.androidide.db.IRealmProvider
-import com.itsaky.androidide.testing.android.util.NoOpStatement
 import io.realm.Realm
+import io.realm.RealmConfiguration
 import io.realm.log.LogLevel
 import io.realm.log.RealmLog
 import org.junit.runner.Description
 import org.junit.runners.model.Statement
+import java.io.File
 
 /**
  * Rule for Realm DB tests.
  *
- * @author Akash Yadav
+ * Uses a dedicated Realm under the app's cache directory for each test name.
  */
 class RealmDBTestRule(
   val baseModule: Any? = null,
-  vararg val additionalModules: Array<Any>,
+  vararg val additionalModules: Any,
 ) : AbstractAndroidTestRule() {
 
-  inline fun withDb(dbName: String, deleteDbAfterTest: Boolean = true, action: Realm.() -> Unit) {
-    val name = dbName.replace(IRealmProvider.PATH_SEPARATOR, '-')
-    val realm = IRealmProvider.instance().get("/indexing/java/$name") {
-      baseModule?.let { baseModule ->
-        modules(baseModule, *additionalModules)
-      }
-    }
+  fun withDb(
+    dbName: String,
+    deleteDbAfterTest: Boolean = true,
+    action: Realm.() -> Unit
+  ) {
+    // Make the name filesystem-safe
+    val safeName = dbName.replace('/', '-').replace('\\', '-')
 
+    // Create a per-test directory under cache
+    val dir = File(context.applicationContext.cacheDir, "realm-tests/$safeName").apply { mkdirs() }
+
+    val config = RealmConfiguration.Builder()
+      .directory(dir)
+      .name("$safeName.realm")
+      // If your Realm version supports modules and you need them, add here.
+      // The generic builder.modules(...) call is omitted for broad compatibility.
+      .build()
+
+    val realm = Realm.getInstance(config)
     try {
       realm.action()
     } finally {
+      realm.close()
       if (deleteDbAfterTest) {
-        realm.configuration.realmDirectory.deleteRecursively()
+        dir.deleteRecursively()
       }
     }
   }
 
-  override fun apply(base: Statement?, description: Description?): Statement {
-    Realm.init(context.applicationContext)
-    RealmLog.setLevel(LogLevel.ALL)
-    base?.evaluate()
-    return NoOpStatement()
+  override fun apply(base: Statement, description: Description): Statement {
+    return object : Statement() {
+      override fun evaluate() {
+        Realm.init(context.applicationContext)
+        RealmLog.setLevel(LogLevel.ALL)
+        base.evaluate()
+      }
+    }
   }
 }

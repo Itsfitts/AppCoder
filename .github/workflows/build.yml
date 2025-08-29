@@ -17,7 +17,7 @@ on:
 
 env:
   # Misc
-  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  GH_TOKEN: ${{ secrets.GH_TOKEN }}
 
   # Signing info
   IDE_SIGNING_ALIAS: ${{ secrets.IDE_SIGNING_ALIAS }}
@@ -52,7 +52,8 @@ jobs:
       - name: Cancel previous runs
         uses: styfle/cancel-workflow-action@0.12.1
         with:
-          access_token: ${{ github.token }}
+          access_token: ${{ secrets.GH_TOKEN }}
+          # access_token: ${{ github.token }}
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -187,7 +188,8 @@ jobs:
       - name: Cancel previous runs
         uses: styfle/cancel-workflow-action@0.12.1
         with:
-          access_token: ${{ github.token }}
+          access_token: ${{ secrets.GH_TOKEN }}
+          # access_token: ${{ github.token }}
       - name: Checkout
         uses: actions/checkout@v4
         with:
